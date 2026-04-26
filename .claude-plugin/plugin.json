@@ -1,0 +1,11 @@
+{
+	"name": "agent-tdd",
+	"version": "0.1.0",
+	"description": "TDD in the agent era",
+	"author": {
+		"name": "Willie Chang",
+		"email": "willie.chang@positivegrid.com"
+	},
+	"repository": "https://github.com/Positive-LLC/agent-tdd",
+	"license": "UNLICENSED"
+}

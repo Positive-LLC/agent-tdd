@@ -1,8 +1,9 @@
 # Agent TDD: A Wave-Based Workflow for Human-Agent Co-Authored Tests
 
 **Version:** v1
-**Status:** Design locked, ready to build
 **Audience:** Engineers implementing the workflow
+
+> Project status, v1 deferrals, and known risks are tracked in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -521,32 +522,6 @@ For a workflow with W waves and ~3 agents per wave:
 | Final integration | — | ~3 turns |
 
 A 3-wave workflow costs roughly **~40 turns of orchestration** plus the agent sessions themselves and Wave 0 discussion. The wait phases — historically the expensive part — are nearly free thanks to background Bash.
-
----
-
-## 10. Out of Scope for v1
-
-Considered and deliberately deferred:
-
-- **Recursive spawning within a wave.** Test agents spawning test agents was explored and rejected: red tests cascading down child branches break the "narrow scope per impl agent" principle, and stacked PR fragility makes one-shot impl unreliable. The only sanctioned re-spawn is Root re-spawning aborted agents (bounded to 1 retry).
-- **Stacked PRs across pairs.** Sibling test/impl pairs are flat off Root; no PR depends on another sibling's PR.
-- **Cross-wave dependency tracking beyond GitHub issue links.** No machine-enforced graph of "Wave 2 issue X depends on Wave 1 issue Y" — provenance lives in issue bodies only.
-- **Auto-merge of Root branch to main.** Final integration is human-confirmed.
-- **Crash recovery / Root resume protocol.** If Root or the host machine dies mid-wave, status files persist on disk but Root's conversation context is lost. v1 has no automatic resume; human re-launches Root and manually consults disk state. Future: a `/agent-tdd resume <root-id>` slash command that re-derives state from `.agent-tdd/<root-id>/` + GitHub labels. Tracked in §11.
-
----
-
-## 11. Open Questions / Known Risks
-
-- **Dedup quality.** Structured templates make dedup tractable but not perfect. Some semantic dupes will slip through. Acceptable for v1.
-- **Paused agents AFK for days.** Workflow blocks indefinitely. By design — fire-and-forget allows human gates. Add a "stale paused agent" warning if it becomes a UX issue.
-- **Root branch lifetime.** Long-running Root branches drift from `main`. Recommend periodic `git merge main` into Root branch between waves; automate later.
-- **Crash recovery.** As noted in §10, no automatic resume in v1. Human can re-launch Root and inspect `.agent-tdd/<root-id>/` to reconstruct state. To be addressed in a future revision.
-- **GitHub API rate limits.** With multiple Roots and large waves, the 5000/hr authenticated limit can bite. Issue creation, label updates, and `gh pr checks --watch` polling all count. Monitor and back off as needed.
-- **Anthropic API rate limits.** Each child agent is a separate Claude session. Highly parallel waves on small accounts may rate-limit.
-- **Test isolation.** Multiple parallel test runs (during impl agent CI) may interfere if the project uses shared resources (databases, fixed ports, shared on-disk state). Project-specific concern; document in project README if relevant.
-- **Worktree disk usage.** Each worktree is a full working tree. For large repos, N parallel worktrees = N× disk. Prune aggressively on terminal status.
-- **`--dangerously-skip-permissions` for impl agents.** Required for non-interactive autonomy. Intended for trusted local repos; do not run Agent TDD against repos whose build steps would expose secrets to an unaudited shell.
 
 ---
 
