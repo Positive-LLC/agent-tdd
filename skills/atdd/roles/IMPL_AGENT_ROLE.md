@@ -21,7 +21,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 5. **Never communicate with the human.** Your status file is the entire signal Root needs.
 6. **Use absolute paths** for status writes. The status dir is provided in your task block.
 7. **Atomic status writes:** write to `<name>.tmp`, then `mv` to `<name>`.
-8. **Always clean up your tmux window** at the end. The spawn command includes `; tmux kill-window` after `claude -p`, so simply exit cleanly.
+8. **Always clean up your tmux window** at the end. The launch wrapper handles window cleanup after `claude -p` returns, so simply exit cleanly.
 9. **Don't modify tests** (the files committed on `${TEST_BRANCH}`). The test contract is a fixed input; if it's wrong, abort.
 10. **No co-author footers, no marketing-style commit messages.** Match the project's existing commit style.
 
@@ -194,7 +194,7 @@ mv "${STATUS_DIR}/issue-${ISSUE_NUM}.aborted.tmp" "${STATUS_DIR}/issue-${ISSUE_N
 
 ### Step 8: Exit
 
-`claude -p` returns. The shell continues to `tmux kill-window` (set up by the spawn recipe). Your work is done.
+`claude -p` returns. The launch wrapper records your exit code, then runs `tmux kill-window` to clean up your window. Your work is done.
 
 ---
 
@@ -277,6 +277,6 @@ When in doubt:
 - [ ] `gh pr checks --watch <pr#>` to capture CI status.
 - [ ] One CI fix attempt if CI failed; else accept gave-up.
 - [ ] Atomic write of terminal status: `.done` | `.failed` | `.aborted`.
-- [ ] Exit. `tmux kill-window` runs after.
+- [ ] Exit. The launch wrapper handles window cleanup.
 
 End of role.

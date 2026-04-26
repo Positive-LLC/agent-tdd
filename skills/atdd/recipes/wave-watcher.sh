@@ -26,7 +26,7 @@ mkdir -p "${STATUS_DIR}"
 while true; do
   # Count terminal files
   terminal_count=$(find "${STATUS_DIR}" -maxdepth 1 -type f \
-    \( -name '*.done' -o -name '*.failed' -o -name '*.aborted' \) 2>/dev/null | wc -l)
+    \( -name '*.done' -o -name '*.failed' -o -name '*.aborted' -o -name '*.crashed' \) 2>/dev/null | wc -l)
   paused_file=$(find "${STATUS_DIR}" -maxdepth 1 -type f -name '*.paused' 2>/dev/null | head -1)
 
   if [[ "${terminal_count}" -ge "${EXPECTED}" ]]; then

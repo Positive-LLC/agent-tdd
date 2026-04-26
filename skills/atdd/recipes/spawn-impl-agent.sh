@@ -7,7 +7,9 @@
 #   - Creates the impl worktree at .agent-tdd/<root-id>/worktrees/issue-<N>-impl
 #     on a new branch issue-<N>-impl stacked off issue-<N>-tests.
 #   - Opens a new tmux window <workspace-session>:issue-<N>-PR.
-#   - Launches `claude -p '<role+task>' --dangerously-skip-permissions ; tmux kill-window`.
+#   - Launches the impl agent via `launch-impl-agent.sh`, which wraps `claude -p`
+#     with stdout/stderr capture, exit-code recording, a `.crashed` status marker
+#     on silent death, and hardened `tmux kill-window` cleanup.
 #
 # Fire-and-forget. The test agent self-closes after this returns.
 
@@ -25,7 +27,11 @@ PLUGIN_DIR="$4"
 WORKSPACE_SESSION="$5"
 ROOT_TASK="$6"
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+# NOTE: this recipe is invoked by a test agent whose CWD is its own worktree.
+# `--show-toplevel` would return the worktree path, not the main repo. Use
+# `--git-common-dir` (which always points at <main-repo>/.git) to recover the
+# main worktree regardless of which worktree is calling.
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
 STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREE_DIR="${STATE_DIR}/worktrees/issue-${ISSUE_NUM}-impl"
@@ -83,10 +89,15 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
 } > "${PROMPT_FILE}"
 log "wrote prompt to ${PROMPT_FILE}"
 
-# --- launch fire-and-forget claude -p ---
-# Use `claude -p "$(cat prompt-file)"` so the prompt is preserved as a single
-# argument. tmux send-keys with -l avoids interpreting characters as keys.
-LAUNCH_CMD="claude -p \"\$(cat '${PROMPT_FILE}')\" --dangerously-skip-permissions ; tmux kill-window"
+# --- launch via wrapper that captures logs + writes .crashed on silent death ---
+LOG_DIR="${STATE_DIR}/wave-${WAVE}/logs/issue-${ISSUE_NUM}"
+mkdir -p "${LOG_DIR}"
+LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
+[[ -x "${LAUNCHER}" ]] || die "launcher not executable: ${LAUNCHER}"
+
+# tmux send-keys with -l sends the line literally; the receiving bash parses
+# and runs it. The wrapper reads $TMUX_PANE from its env (set by tmux).
+LAUNCH_CMD="bash '${LAUNCHER}' '${ISSUE_NUM}' '${PROMPT_FILE}' '${LOG_DIR}' '${STATUS_DIR}'"
 tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
 tmux send-keys -t "${TARGET}" Enter
-log "impl agent for issue #${ISSUE_NUM} dispatched (fire-and-forget)"
+log "impl agent for issue #${ISSUE_NUM} dispatched (fire-and-forget); logs at ${LOG_DIR}"

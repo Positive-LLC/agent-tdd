@@ -121,7 +121,7 @@ Rules:
 
 All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 
-**Terminal (`.done`, `.failed`, `.aborted`)** — written by impl agents (and by test agents only on `.aborted`):
+**Terminal (`.done`, `.failed`, `.aborted`, `.crashed`)** — `.done`/`.failed`/`.aborted` are written by impl agents themselves (and `.aborted` by test agents). `.crashed` is written by the impl-agent launch wrapper (`recipes/launch-impl-agent.sh`) when `claude -p` exits non-zero before the agent wrote any other terminal status — i.e., the agent died silently mid-task.
 
 ```json
 {
@@ -134,9 +134,10 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 }
 ```
 
-- `outcome` ∈ `{"success", "failed", "aborted"}` (matches the file extension)
+- `outcome` ∈ `{"success", "failed", "aborted", "crashed"}` (matches the file extension)
 - `ci_status` ∈ `{"passing", "failing", "no-checks", "not-applicable"}`
 - For `.aborted`: `pr_url` is null, `ci_status` is `"not-applicable"`, `exit_reason` describes the test-contract problem.
+- For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, exit_reason}`. The wrapper writes it; treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `claude.stderr`, `claude.exitcode`) to diagnose.
 
 **Paused (`.paused`)** — transient; written by either test or impl agents:
 
@@ -225,6 +226,7 @@ Every agent in the wave has reached a terminal state:
 - 🛑 `.aborted` — test contract malformed; **must be consumed by you** before counting:
   - Re-spawn the test agent once with abort feedback (resets the issue to in-flight; Gate 1 is re-evaluated when it finishes), OR
   - Escalate (second-pass abort): label the issue `agent-tdd:failed`, raise hand to human.
+- 💥 `.crashed` — impl agent died silently (claude -p exited non-zero before writing its own terminal status). Treat like `.failed`: label the issue `agent-tdd:failed`, no automatic re-spawn (the cause is unknown; could be transient API blip, internal limit, or environmental). Inspect the log bundle at `log_dir` (`claude.stderr`, `claude.exitcode`) to diagnose, then escalate to human if recurrence-prone.
 
 Paused agents are **not terminal**. The wave waits indefinitely for them to be resolved. This is by design — fire-and-forget allows pause gates without timing out.
 
@@ -303,6 +305,7 @@ When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
 | Impl `.done` (CI green) | `agent-tdd:active-wave-<N>` → `agent-tdd:done` |
 | Impl `.failed` | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
 | Impl `.aborted` (second pass) | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
+| Impl `.crashed` | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
 | Auto-merge clean | (no label change; `agent-tdd:done` already set) |
 | Rebase ladder rung 3 | `agent-tdd:rebase-blocked` added |
 | Rebase ladder rung 4 | `agent-tdd:rebase-regression` added |
@@ -385,16 +388,7 @@ The test agent then:
 
 ### 5.3 Impl agents
 
-Spawned by test agents (not by you directly), via fire-and-forget:
-
-```bash
-# (run by the test agent, from the test worktree)
-git worktree add <state-dir>/worktrees/issue-<N>-impl -b issue-<N>-impl issue-<N>-tests
-tmux new-window -t ws-root-<id>: -n issue-<N>-PR -c <impl-worktree>
-tmux send-keys -t ws-root-<id>:issue-<N>-PR \
-  "claude -p '$(cat ${CLAUDE_SKILL_DIR}/roles/IMPL_AGENT_ROLE.md && echo && echo '<task block>')' \
-   --dangerously-skip-permissions ; tmux kill-window" Enter
-```
+Spawned by test agents (not by you directly), via fire-and-forget. The test agent invokes `recipes/spawn-impl-agent.sh`, which creates the worktree and tmux window, then dispatches `recipes/launch-impl-agent.sh` (the wrapper) into that window. The wrapper handles `claude -p` invocation, stdout/stderr capture to `<state-dir>/wave-<N>/logs/issue-<N>/`, exit-code recording, the `.crashed` marker on silent death, and hardened `tmux kill-window` cleanup.
 
 The impl agent:
 - Iterates within one Claude session (run tests, edit, re-run — that is normal work, not a forbidden retry).
@@ -434,7 +428,7 @@ bash ${CLAUDE_SKILL_DIR}/recipes/wave-watcher.sh <root-id> <wave> <expected_term
 
 The watcher:
 - Polls `<status-dir>` every 10 seconds.
-- Exits with `EVENT=terminal` when the count of `.done|.failed|.aborted` files reaches `<expected_terminal_count>`.
+- Exits with `EVENT=terminal` when the count of `.done|.failed|.aborted|.crashed` files reaches `<expected_terminal_count>`.
 - Exits with `EVENT=paused FILE=<path>` if any `.paused` file appears.
 - Has no timeout.
 
@@ -509,7 +503,8 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 | Impl gave up (tests still red after varied attempts) | PR opened with "gave up" comment. Status `.failed`. Window self-cleans. Wave continues. |
 | Impl CI failed post-PR | Status `.failed` with `ci_status: failing`. PR open. You may retry once after auto-rebase if conflict-induced. |
 | Impl aborted (test malformed) | Status `.aborted`, no PR. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
-| Test agent crash (silent death) | Status file missing; watcher does not advance. Dashboard window reflects "stuck" once heartbeat threshold passes. Human notices and intervenes. |
+| Impl crashed (silent death) | `claude -p` exited non-zero before the agent wrote its own status. The launch wrapper writes `.crashed` automatically and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{claude.stderr,claude.exitcode}` to diagnose. No automatic re-spawn. |
+| Test agent crash (silent death) | Status file missing; watcher does not advance. Dashboard window reflects "stuck" once heartbeat threshold passes. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
 | Rebase-blocked / rebase-regression | §3.7 escalation ladder. |
@@ -542,7 +537,7 @@ On clean termination, you:
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.
-- **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed). Paused is **not** terminal.
+- **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed), `.crashed` (impl agent died silently before writing its own status; written by the launch wrapper). Paused is **not** terminal.
 - **Agent-terminal (Gate 1)** — every agent in the wave has reached a terminal state.
 - **Wave-merged (Gate 2)** — all `.done` PRs have been merged to the Root branch.
 - **Single-session, single-PR rule** — an impl agent runs one Claude session and produces at most one PR; iteration within the session is permitted, spawning new agents is not.

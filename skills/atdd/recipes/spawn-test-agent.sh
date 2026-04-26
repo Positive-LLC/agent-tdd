@@ -8,6 +8,8 @@
 #     on a new branch issue-<N>-tests off agent-tdd/<root-task>.
 #   - Creates the workspace tmux session if missing.
 #   - Opens a new tmux window <workspace-session>:issue-<N> anchored at the worktree.
+#   - Starts `tmux pipe-pane` writing pane output to logs/issue-<N>/tmux.pane
+#     so the interactive session is captured to disk for forensics.
 #   - Launches `claude` in that window.
 #   - Pastes the constructed initial prompt (TEST_AGENT_ROLE.md + per-issue task block).
 #   - Submits the prompt with Enter.
@@ -58,6 +60,14 @@ if tmux list-windows -t "${WORKSPACE_SESSION}" -F '#W' 2>/dev/null | grep -qx "$
 fi
 log "opening tmux window ${TARGET} at ${WORKTREE_DIR}"
 tmux new-window -t "${WORKSPACE_SESSION}:" -n "${WINDOW}" -c "${WORKTREE_DIR}"
+
+# --- start pane capture before launching claude ---
+# Test agents are interactive; pane scrollback is volatile and lost on
+# `tmux kill-window`. Pipe-pane snapshots everything to disk in real time.
+LOG_DIR="${STATE_DIR}/wave-${WAVE}/logs/issue-${ISSUE_NUM}"
+mkdir -p "${LOG_DIR}"
+tmux pipe-pane -t "${TARGET}" "cat >> '${LOG_DIR}/tmux.pane'"
+log "capturing pane to ${LOG_DIR}/tmux.pane"
 
 # --- launch claude ---
 tmux send-keys -t "${TARGET}" 'claude' Enter
