@@ -237,7 +237,7 @@ All `.done` PRs have been merged into the Root branch. **You** drive this autono
 **Wave N+1 only fires after Gate 2.** Update your dashboard window name to reflect the gate state:
 - `root-<id>: wave-<N> (agent-terminal, merging…)`
 - `root-<id>: wave-<N> done`
-- `root-<id>: wave-<N> ⏸ paused (#5) — human input needed`
+- `root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed`
 
 ### 3.5 Wave-to-Wave Handoff (housekeeping)
 
@@ -467,8 +467,8 @@ Manipulate **your own window in the `roots` session** — visible at a glance:
 
 ```bash
 # Window name = current state
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> (3 active)'
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> ⏸ paused (#5) — human input needed'
+tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> (<count> active)'
+tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'
 tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> merging…'
 tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> done — review backlog'
 tmux rename-window -t roots:root-<id> 'root-<id>: ALL DONE ✅'

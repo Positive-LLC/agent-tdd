@@ -107,7 +107,7 @@ Until termination, every assistant response must begin with a one-line phase pre
 
 ```
 [wave-0: discussing spec with human]
-[wave-1: spawning 3 test agents]
+[wave-1: spawning N test agents]
 [wave-1: gate-1 reached, processing 1 abort]
 [wave-1: gate-2: rebase ladder rung 2 on PR #42]
 [wave-1: done; planning wave-2]
