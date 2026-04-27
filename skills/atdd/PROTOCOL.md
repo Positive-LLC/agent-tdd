@@ -255,7 +255,7 @@ On Gate 1 (`agent-terminal`), perform in order:
    - The backlog is empty (workflow may be terminating; see §8).
    - Issue selection is genuinely ambiguous (e.g. competing scopes that need human prioritization).
    - The wave produced unusually many failures (failure-rate guard, §8).
-6. **Prune worktrees of completed issues.** `${CLAUDE_SKILL_DIR}/recipes/prune-worktrees.sh <root-id> <wave>`.
+6. **Wave-end cleanup.** `${CLAUDE_SKILL_DIR}/recipes/wave-end-cleanup.sh <root-id> <wave>`. Removes worktrees for all terminal-state issues, and for each `.done` issue whose impl PR is MERGED also deletes the per-issue branches (`issue-<N>-tests`, `issue-<N>-impl`) on local and `origin`. Branches for non-merged or non-`.done` issues are preserved (they may hold open-PR work or debugging context).
 7. **Bump `meta.json:current_wave` and fire Wave N+1**, OR terminate (§8).
 
 ### 3.6 Scope Discipline (issue partitioning)
@@ -525,9 +525,15 @@ On clean termination, you:
 
 1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — usually `main`, but may be any branch the human configured at Wave 0). Do not auto-merge.
 2. After human confirms: `gh pr create --base <base> --head agent-tdd/<task>` (or `git merge` if the human prefers). Close all `agent-tdd:done` issues that are tied to merged PRs.
-3. Update the dashboard: `tmux rename-window -t roots:root-<id> 'root-<id>: COMPLETE ✅'`.
-4. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
-5. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").
+3. **Delete the integration branch** once the final merge is confirmed (the content is now in `<base>`):
+   ```bash
+   git push origin --delete "agent-tdd/<task>" || true
+   git branch -D "agent-tdd/<task>" || true
+   ```
+   Skip this step if the human declined to merge or kept the branch open intentionally.
+4. Update the dashboard: `tmux rename-window -t roots:root-<id> 'root-<id>: COMPLETE ✅'`.
+5. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
+6. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").
 
 ---
 
@@ -565,7 +571,7 @@ On clean termination, you:
 - [ ] Drive Gate 2: auto-merge `.done` PRs, climb rebase ladder on conflict
 - [ ] Re-baseline (`git pull --ff-only`)
 - [ ] Wave Review: pick next wave or terminate
-- [ ] Prune worktrees
+- [ ] Wave-end cleanup (`wave-end-cleanup.sh`: prune worktrees, delete merged issue branches local+remote)
 - [ ] Bump `meta.json:current_wave` and fire Wave N+1
 
 **On EVENT=paused:**
@@ -575,8 +581,9 @@ On clean termination, you:
 - [ ] If no: rename window, notify human, wait, then relay
 
 **On termination:**
-- [ ] Ask human to confirm `agent-tdd/<task>` → `main` merge
+- [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; default `main`)
 - [ ] Close `agent-tdd:done` issues tied to merged PRs
+- [ ] Delete `agent-tdd/<task>` branch (local + remote) after final merge confirmed
 - [ ] Final dashboard rename + notification
 - [ ] Self-close after human confirms
 

@@ -82,7 +82,7 @@ What lives where:
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch claude, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + claude -p. |
 | `recipes/wave-watcher.sh` | Background-Bash event watcher. **Issue once per wave with `run_in_background=true`.** |
-| `recipes/prune-worktrees.sh` | Remove worktrees of completed issues at wave end. |
+| `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove worktrees and delete merged issue branches (local+remote). |
 | `recipes/notify-human.sh` | tmux rename-window + display-message + notify-send/osascript. |
 | `templates/ISSUE_TEMPLATE.md` | §5.2 structured issue body. Use with `gh issue create --body-file`. |
 
