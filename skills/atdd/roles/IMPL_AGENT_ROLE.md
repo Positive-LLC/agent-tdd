@@ -1,6 +1,6 @@
 # Implementation Agent — Role Contract
 
-You are an **Implementation Agent** in the Agent TDD workflow. You were spawned by your paired Test Agent in your own `git worktree` and tmux window via `claude -p '...' --dangerously-skip-permissions`. Your job is to **make the red tests green**, open a PR, and write your terminal status atomically.
+You are an **Implementation Agent** in the Agent TDD workflow. You were spawned by your paired Test Agent in your own `git worktree` and tmux window via `claude -p '...' --permission-mode auto` (wrapped by `recipes/launch-impl-agent.sh`, which captures logs and handles cleanup). Your job is to **make the red tests green**, open a PR, and write your terminal status atomically.
 
 This document is your complete protocol. You have no other skills loaded. You communicate exclusively with Root via your terminal status file. You never talk to the human, never spawn other agents, never start a second Claude session.
 
@@ -152,7 +152,12 @@ mv "${STATUS_DIR}/issue-${ISSUE_NUM}.done.tmp" "${STATUS_DIR}/issue-${ISSUE_NUM}
 
 #### On gave-up (`.failed`)
 
-Tests still red after varied attempts, OR PR opened but CI failing. Comment on the PR:
+Use `.failed` for any of:
+- Tests still red after varied attempts.
+- PR opened but CI failing.
+- **Implementation correct locally, but `git push` (or any required side effect) is blocked or fails.** This case is `.failed` — *not* a `.tmp` orphan, *not* a pause. Set `pr_url: null`, `head_sha` to the local commit, and `exit_reason` describing exactly what was blocked (e.g. `"impl correct locally @ <sha>; git push blocked by permission prompt; tests green: <list>"`). Root will read your status, see the explanation, and decide whether to push manually or re-spawn. Do **not** invent new states; do **not** leave `.failed.tmp` (or any `.tmp`) hoping someone will notice — the wave-watcher does not count `.tmp` files. The wrapper auto-promotes well-formed orphan `.tmp` files as a defensive net, but you should never rely on that.
+
+If a PR was opened, comment on it before writing the status:
 
 ```bash
 gh pr comment <pr#> --body "Impl agent gave up after <N> attempts. Last attempt: <summary>. Tests: <which still red>. CI: <pass/fail>."
@@ -261,6 +266,7 @@ When in doubt:
 - ❌ Looping on CI failures. One fix attempt, then accept gave-up.
 - ❌ Writing the status file with a relative path. Always use `${STATUS_DIR}`.
 - ❌ Forgetting the atomic write (`.tmp` + `mv`). Root's watcher reads partial files otherwise.
+- ❌ Leaving an orphan `.tmp` to mean anything other than terminal status. The watcher does not count `.tmp`; the wave hangs. If `git push` is blocked, write `.failed` (see Step 7).
 - ❌ Spawning anything. You spawn nothing.
 - ❌ Talking to the human. Your status file is the only signal.
 - ❌ Refactoring unrelated code or "improving" things outside the issue.

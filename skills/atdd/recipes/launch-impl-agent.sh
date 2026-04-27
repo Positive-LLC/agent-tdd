@@ -33,7 +33,11 @@ date -Ins > "${LOG_DIR}/claude.timing.start"
 
 # Capture stdout and stderr to disk while keeping them visible in the pane.
 # Process substitution + tee preserves real-time visibility AND on-disk logs.
-claude -p "$(cat "${PROMPT_FILE}")" --dangerously-skip-permissions \
+# `--permission-mode auto` (instead of the older `--dangerously-skip-permissions`)
+# was chosen after observing inconsistent push behavior with the latter — see
+# ROADMAP.md "intermittent --dangerously-skip-permissions"; revisit if `auto`
+# also produces the same hit/miss pattern.
+claude -p "$(cat "${PROMPT_FILE}")" --permission-mode auto \
   > >(tee "${LOG_DIR}/claude.stdout") \
   2> >(tee "${LOG_DIR}/claude.stderr" >&2)
 rc=$?
@@ -42,11 +46,33 @@ date -Ins > "${LOG_DIR}/claude.timing.end"
 echo "${rc}" > "${LOG_DIR}/claude.exitcode"
 
 # Give the tee subshells a moment to finish writing, and let the agent's own
-# atomic-status `mv` settle, before deciding whether to write `.crashed`.
+# atomic-status `mv` settle.
 sleep 1
 
+# Auto-promote orphan atomic-write `.tmp` files. The protocol requires the
+# agent to do `cat > .tmp ; mv .tmp final`, but if the agent skipped the `mv`
+# (observed: agent intentionally left a `.tmp` thinking it would signal a
+# non-terminal "stuck" state — see ROADMAP "Bug B"), the watcher won't count
+# it as terminal and the wave hangs forever. Auto-promote here only if the
+# `.tmp` is well-formed JSON; otherwise treat as crash and preserve the
+# corrupt tmp in the log dir for forensics.
+for status in done failed aborted; do
+  TMP="${STATUS_DIR}/issue-${ISSUE_NUM}.${status}.tmp"
+  FINAL="${STATUS_DIR}/issue-${ISSUE_NUM}.${status}"
+  [[ -f "${TMP}" && ! -f "${FINAL}" ]] || continue
+  if jq -e . "${TMP}" >/dev/null 2>&1; then
+    mv "${TMP}" "${FINAL}"
+    echo "[launch-impl] auto-promoted orphan ${TMP##*/} -> ${FINAL##*/}" >&2
+  else
+    cp "${TMP}" "${LOG_DIR}/orphan-${status}.tmp"
+    rm -f "${TMP}"
+    echo "[launch-impl] discarded malformed orphan ${TMP##*/} (preserved at logs/orphan-${status}.tmp)" >&2
+  fi
+done
+
 # Write `.crashed` ONLY when claude exited non-zero AND the agent didn't write
-# a terminal status itself. This avoids racing the agent's own `.done` etc.
+# a terminal status itself. The orphan-promote pass above ran first, so any
+# valid `.tmp` is already promoted to its final form by this point.
 if [[ "${rc}" -ne 0 ]] \
    && [[ ! -f "${STATUS_DIR}/issue-${ISSUE_NUM}.done" ]] \
    && [[ ! -f "${STATUS_DIR}/issue-${ISSUE_NUM}.failed" ]] \
