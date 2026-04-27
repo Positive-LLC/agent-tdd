@@ -188,7 +188,7 @@ main
 
 **Wave gating:** see §4.4 for the two thresholds. Wave N+1 only fires after Wave N reaches `wave-merged` — i.e. all successful PRs are actually merged to the Root branch.
 
-When the entire workflow terminates, the Root branch merges to `main` as the final integration step (human-confirmed; not automatic).
+When the entire workflow terminates, the Root branch merges to its configured base branch (`meta.json:base`, usually `main`) as the final integration step (human-confirmed; not automatic).
 
 ---
 
@@ -500,7 +500,7 @@ The workflow ends when one of:
 
 On clean termination, Root performs:
 
-1. Merge the Root branch (`agent-tdd/<root-task>`) to `main`. (Human-confirmed.)
+1. Merge the Root branch (`agent-tdd/<root-task>`) to its configured base branch (`meta.json:base`, usually `main`). (Human-confirmed.)
 2. Close all `agent-tdd:done` issues.
 3. Update the dashboard window: `root-<id>: COMPLETE ✅`.
 4. Notify the human (`notify-send`).

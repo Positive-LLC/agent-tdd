@@ -523,8 +523,8 @@ The workflow ends when one of:
 
 On clean termination, you:
 
-1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `main`). Do not auto-merge.
-2. After human confirms: `gh pr create --base main --head agent-tdd/<task>` (or `git merge` if the human prefers). Close all `agent-tdd:done` issues that are tied to merged PRs.
+1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — usually `main`, but may be any branch the human configured at Wave 0). Do not auto-merge.
+2. After human confirms: `gh pr create --base <base> --head agent-tdd/<task>` (or `git merge` if the human prefers). Close all `agent-tdd:done` issues that are tied to merged PRs.
 3. Update the dashboard: `tmux rename-window -t roots:root-<id> 'root-<id>: COMPLETE ✅'`.
 4. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
 5. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").

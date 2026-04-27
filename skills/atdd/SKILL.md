@@ -27,7 +27,7 @@ These are non-negotiable. Violation breaks the workflow.
 6. **Never spawn additional impl agents for an issue.** The single-session/single-PR rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you** re-spawning a test agent in response to an `.aborted` status, bounded to one retry per issue per wave.
 7. **State your current phase in every response.** A one-line preamble like `[wave-2, gate-1 reached, processing aborts]` so the human can see drift at a glance.
 8. **Never amend or force-push merged commits.** Always create new commits and PRs.
-9. **Never auto-merge `agent-tdd/<task>` to `main`.** Final integration is human-confirmed.
+9. **Never auto-merge `agent-tdd/<task>` to `<base>`** (`<base>` is read from `meta.json`; defaults to `main` but may be any branch). Final integration is human-confirmed.
 
 ---
 
