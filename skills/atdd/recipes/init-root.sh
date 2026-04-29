@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # init-root.sh — bootstrap a Root for Agent TDD.
 #
-# Usage:  init-root.sh <root-task-slug> [base-branch]
+# Usage:  init-root.sh <root-task-slug> <base-branch>
+#
+# Both arguments are required. There is no default for <base-branch>: Root
+# must explicitly ask the human in Wave 0 and pass the answer through verbatim.
+# This guards against silent assumption of `main`.
 #
 # Effects:
 #   - Atomically claims the next available root-id (root-1, root-2, ...) by
@@ -26,9 +30,10 @@ log() { printf '[init-root] %s\n' "$*" >&2; }
 die() { printf '[init-root] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # --- args ---
-[[ $# -ge 1 ]] || die "missing arg: <root-task-slug> [base-branch]"
+[[ $# -ge 2 ]] || die "usage: init-root.sh <root-task-slug> <base-branch> (both required; no default for base-branch — ask the human in Wave 0)"
 ROOT_TASK="$1"
-BASE_BRANCH="${2:-main}"
+BASE_BRANCH="$2"
+[[ -n "$BASE_BRANCH" ]] || die "base-branch must be non-empty (got: '')"
 
 [[ "$ROOT_TASK" =~ ^[a-z0-9-]+$ ]] || die "root-task must match ^[a-z0-9-]+$ (got: $ROOT_TASK)"
 

@@ -27,7 +27,7 @@ These are non-negotiable. Violation breaks the workflow.
 6. **Never spawn additional impl agents for an issue.** The single-session/single-PR rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you** re-spawning a test agent in response to an `.aborted` status, bounded to one retry per issue per wave.
 7. **State your current phase in every response.** A one-line preamble like `[wave-2, gate-1 reached, processing aborts]` so the human can see drift at a glance.
 8. **Never amend or force-push merged commits.** Always create new commits and PRs.
-9. **Never auto-merge `agent-tdd/<task>` to `<base>`** (`<base>` is read from `meta.json`; defaults to `main` but may be any branch). Final integration is human-confirmed.
+9. **Never auto-merge `agent-tdd/<task>` to `<base>`** (`<base>` is read from `meta.json`; set explicitly by the human in Wave 0 — never defaulted, never inferred from the current branch). Final integration is human-confirmed.
 
 ---
 
@@ -48,13 +48,14 @@ Wave 0 is the **only** phase where you converse freely with the human. Treat it 
 The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 
 1. **Mirror back what you heard, briefly.** One paragraph. Confirm the Subject Under Test, expected behavior, success criteria.
-2. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
-3. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
-4. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
-5. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch>`. Defaults: `base-branch=main`. This atomically claims your Root ID, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
-6. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
-7. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
-8. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
+2. **Ask for the base branch — explicitly, every time.** Required as one of your first questions. Do **not** guess, do **not** assume `main`, do **not** use the current branch. Phrase it directly: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the human's answer before proceeding. The answer is passed verbatim to `init-root.sh` and recorded in `meta.json:base`; final integration (§8) merges back to this same branch.
+3. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
+4. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
+5. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
+6. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch>`. Both arguments are required — the recipe has no default for `<base-branch>` and will fail if omitted. This atomically claims your Root ID, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
+7. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
+8. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
+9. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
 
 **Discussion shape — do this:**
 - Be a thoughtful test-spec collaborator. The human's high-leverage activity is shaping the test cases.

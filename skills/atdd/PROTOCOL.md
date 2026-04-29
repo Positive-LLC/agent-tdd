@@ -99,7 +99,7 @@ Written once during Wave 0; re-read at the start of each wave.
 
 - `root_id` is unique across concurrent Roots in this repo. `init-root.sh` claims it atomically via `mkdir` (race-safe under concurrent inits). The first Root is `root-1`; subsequent Roots get the next free `root-N`.
 - `task` matches `^[a-z0-9-]+$`. Used for the integration branch name `agent-tdd/<task>`.
-- `base` defaults to `main` but may be configured.
+- `base` is set explicitly by the human in Wave 0. There is no default — Root must ask. Whatever the human names is what `init-root.sh` branches off and what §8 merges back into.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
@@ -171,14 +171,15 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 
 This is the only phase where you converse freely with the human.
 
-1. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
-2. **Decide the Root task slug.** Ask the human if you're unsure. Validate against `^[a-z0-9-]+$`.
-3. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task> <base>`. This:
+1. **Ask the base branch — explicitly, every time.** Required as one of your first questions, before substantive spec discussion. Do **not** guess. Do **not** assume `main`. Do **not** read the current branch and use that. Phrase it directly to the human: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the answer; the literal value is passed to `init-root.sh` as `<base>`, persisted in `meta.json:base`, and merged back into during final integration (§8).
+2. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
+3. **Decide the Root task slug.** Ask the human if you're unsure. Validate against `^[a-z0-9-]+$`.
+4. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task> <base>`. Both arguments are required — `<base>` is the value the human gave in step 1. This:
    - Creates `agent-tdd/<task>` off `<base>`, pushes to origin.
    - Creates `.agent-tdd/root-<id>/meta.json`.
    - Ensures `.agent-tdd/` is in the repo `.gitignore`.
-4. **Propose Wave 1.** Lay out the issues you'd open for Wave 1: each with a Subject Under Test, a one-sentence Behavior, and a Type. Apply scope discipline (§3.6) when proposing parallel issues.
-5. **Wait for "go".** When the human says "go" (or equivalent), transition to autopilot. **From this point, do not initiate freeform conversation with the human.**
+5. **Propose Wave 1.** Lay out the issues you'd open for Wave 1: each with a Subject Under Test, a one-sentence Behavior, and a Type. Apply scope discipline (§3.6) when proposing parallel issues.
+6. **Wait for "go".** When the human says "go" (or equivalent), transition to autopilot. **From this point, do not initiate freeform conversation with the human.**
 
 ### 3.2 Wave Initiation
 
@@ -531,7 +532,7 @@ The workflow ends when one of:
 
 On clean termination, you:
 
-1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — usually `main`, but may be any branch the human configured at Wave 0). Do not auto-merge. Recommend `gh pr create --base <base> --head agent-tdd/<task>` rather than `git merge` — `git merge` would require switching the main worktree's HEAD, which is not yours to do.
+1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — the branch the human named in Wave 0; never assume `main`). Do not auto-merge. Recommend `gh pr create --base <base> --head agent-tdd/<task>` rather than `git merge` — `git merge` would require switching the main worktree's HEAD, which is not yours to do.
 2. After human confirms and the PR is merged: close all `agent-tdd:done` issues that are tied to merged PRs.
 3. **Run termination cleanup** if the human accepted the merge:
    ```bash
@@ -589,7 +590,7 @@ On clean termination, you:
 - [ ] If no: rename window, notify human, wait, then relay
 
 **On termination:**
-- [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; default `main`)
+- [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; set explicitly in Wave 0 — no default)
 - [ ] Close `agent-tdd:done` issues tied to merged PRs
 - [ ] Run `terminate-root.sh <root-id> <task>` after final merge confirmed (cd out of Root worktree first; recipe removes worktree + deletes branch local+remote)
 - [ ] Final dashboard rename + notification
