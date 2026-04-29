@@ -24,6 +24,26 @@ Hard rules for the entire workflow:
 
 ---
 
+## 1.5 Standards (operating principles)
+
+These six principles govern every judgment call you make. They override your instinct to be efficient. When in doubt during any phase, re-read this section before §3 (Wave Lifecycle).
+
+The bar these principles defend: **the test surface this workflow produces must be a 1:1 mirror of production**. Strictness is the product. A green wave that papered over real bugs is a worse outcome than a paused wave that surfaced them.
+
+**P1 — Verification is sacred.** When a verification step the wave was *supposed to perform* (smoke, e2e, strict-mode build, integration check — anything specified in the issue body or Wave 0 plan) surfaces a real defect, the finding **belongs to this wave**. Gate 2 may not advance on a PR whose stated verification is incomplete or unverified.
+
+**P2 — Never weaken the contract to make a wave pass.** Pre-stubs, scope reductions, downgrading strict to lax, narrowing the set of leaves/files/modules under verification, or any change that makes failing tests pass without addressing root cause is **forbidden** as a resolution path. If verification surfaces real bugs (including bugs in code outside the issue's nominal subject), those bugs are in-scope until *proven impossible* to fix within the wave.
+
+**P3 — Dig before you defer.** Before proposing that anything be deferred, opened as a new issue, or punted to another owner, you must (a) reproduce the failure locally in your Root worktree, (b) trace it to root cause, not symptom, and (c) document — in writing in `.agent-tdd/<root-id>/feedback.md` — why it cannot be addressed within this wave's scope. "I don't own that file" is not a reason. "This requires a coordinated multi-repo migration that has its own approval gate" is.
+
+**P4 — Don't present compromise menus.** When you are tempted to write to the human "Option A: accept as-is. Option B: defer. Option C: downscope." — **stop.** Pick the action that goes deeper, take it, and report after. The human's only decision points are Wave 0 (scope and base) and termination (final integration). Not "which flavor of giving up should we choose."
+
+**P5 — `.done` ≠ `.merge-ready`.** A `.done` status from an impl agent means impl thinks it shipped; it does not mean you must merge as-is. Before driving Gate 2 on a PR, verify that the wave's stated verification actually fires and actually passes against this PR's branch. If it doesn't, the PR is **failed-quality**, not done — re-spawn impl with sharper feedback, file the upstream blocker as `agent-tdd:blocking-wave-<N>` (a *blocking* label, not `pending`), or surface to the human with a single recommendation per P6. Do not auto-merge.
+
+**P6 — Escalate with a recommendation, not a question.** When you must surface to the human, state: "I need your input on X because Y is genuinely undecidable from code/context. My recommendation is Z because [specific reason]. Confirm or correct." Single recommendation. Not a menu. Applies to rebase ladder rung 3, second-pass abort, failure-rate guard, and any other escalation.
+
+---
+
 ## 2. Architecture
 
 ### 2.1 tmux Topology
@@ -228,7 +248,7 @@ When a child agent (test or impl) discovers something during the wave, it follow
 | Related to current issue ("this test needs more cases") | Comment on the existing issue. No new issue. |
 | Impl gave up | Open the PR with a "gave up" comment summarizing attempts; write `.failed`. |
 | Test malformed (impl agent's call) | No PR. Write `.aborted` with details. **You** then re-spawn the test agent with the abort details as feedback. |
-| Unrelated ("we should also test fixture Y") | `gh issue create` with labels `agent-tdd:pending` and `agent-tdd:root-<id>`, link back to parent issue. |
+| Unrelated AND not implicated by this wave's verification | `gh issue create` with labels `agent-tdd:pending` and `agent-tdd:root-<id>`, link back to parent issue. **If the finding surfaced because this wave's smoke / e2e / strict-mode build hit it, it is NOT unrelated regardless of which file it lives in — it is wave debt. See §1.5 P1.** |
 
 **Hard rule:** newly created issues are **static** during the current wave. They do not trigger any agent until a future wave activates them. Test agents do not spawn other test agents. Impl agents do not spawn anything. **You** are the only one who spawns, and only at wave boundaries (plus the bounded re-spawn for `.aborted`).
 
@@ -261,6 +281,8 @@ All `.done` PRs have been merged into the Root branch. **You** drive this autono
 
 On Gate 1 (`agent-terminal`), perform in order:
 
+0. **Quality reconciliation (§1.5 P1, P5).** Before counting any `.done` PR as merge-eligible, verify that the wave's stated verification (the smoke / e2e / strict / integration step described in each issue body or in the Wave 0 plan) actually ran and actually passed against this PR's branch. If any verification was skipped, stubbed, scope-reduced, or surfaced findings the PR did not address: the PR is **not** `.done` — it is **failed-quality**. Re-engage per §1.5 P5: re-spawn impl with sharper feedback, file the blocker as `agent-tdd:blocking-wave-<N>`, or escalate per §1.5 P6 with a single recommendation. Do not advance to Gate 2 on a failed-quality PR. Do not propose downscoping, pre-stubs, or deferral-to-future-wave as the resolution (§1.5 P2).
+
 1. **Process aborted issues.** For each `.aborted`:
    - First abort in this wave for this issue: re-spawn the test agent with the abort `exit_reason` as feedback. The issue returns to in-flight. Gate 1 is re-evaluated when the new test agent terminates.
    - Second abort in this wave for this issue: label `agent-tdd:failed`, comment on the issue with both abort reasons, escalate to human via dashboard window rename + `notify-send`.
@@ -292,7 +314,7 @@ When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
 |---|---|---|
 | 1 | Trivial (mechanical: import order, formatting, lock files) | Add a temporary worktree off the main repo: `git -C "${REPO_ROOT}" worktree add "${STATE_DIR}/rebase-pr<#>" issue-<N>-impl`. Rebase, push, re-run CI via `gh pr checks --watch`. Merge if green. Remove the temp worktree afterwards. **Do not** mutate your own Root worktree's HEAD. |
 | 2 | Non-trivial but mechanical | Spawn a one-shot **rebase agent** (`claude -p`, single session, single PR, see `${CLAUDE_SKILL_DIR}/roles/REBASE_AGENT_ROLE.md`). If green after rebase, merge. If not, escalate to rung 3. |
-| 3 | Semantic (e.g. two PRs implement an overlapping feature in incompatible ways) | Cannot resolve. Label PR `agent-tdd:rebase-blocked`. Name the offending PRs in the dashboard window title. Wait for human to either (a) resolve manually and signal you to retry merge, or (b) close one PR (defer to a subsequent wave) and let you proceed. |
+| 3 | Semantic (e.g. two PRs implement an overlapping feature in incompatible ways) | Cannot resolve mechanically. Label PR `agent-tdd:rebase-blocked`. Name the offending PRs in the dashboard window title. Surface to the human with a **single recommendation** per §1.5 P6 — default recommendation: human resolves manually. Close-and-defer is a fallback only when the deferred PR's contribution is genuinely independent of the kept PR's quality bar. **Do not present "(a) resolve" and "(b) defer" as a menu.** |
 | 4 | Rebase regression (rebased cleanly, but CI now fails) | Label PR `agent-tdd:rebase-regression`. Escalate to human. **Do not** auto-spawn a fix agent — regressions imply the test contract may need adjustment, which is a human call. |
 
 **Wave N+1 does not fire while any rebase escalation is unresolved.**
@@ -525,6 +547,7 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 | Test agent crash (silent death) | Status file missing; watcher does not advance. Dashboard window reflects "stuck" once heartbeat threshold passes. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
+| Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` PR did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.agent-tdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
 | Rebase-blocked / rebase-regression | §3.7 escalation ladder. |
 
 **Heartbeat for stuck agents:** a wave has been running for > 30 minutes with no status file changes AND no `.paused` file. Update window: `'root-<id>: wave-<N> (stuck? <count> of <expected> after 30m)'`. Human investigates.
@@ -584,6 +607,7 @@ On clean termination, you:
 - [ ] Update dashboard window name
 
 **On EVENT=terminal:**
+- [ ] Quality reconciliation per §3.5 step 0 before anything else (§1.5 P1, P5)
 - [ ] Process `.aborted` first (re-spawn or escalate)
 - [ ] Run dedup pass on static issues
 - [ ] Drive Gate 2: auto-merge `.done` PRs, climb rebase ladder on conflict

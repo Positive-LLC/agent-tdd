@@ -28,6 +28,7 @@ These are non-negotiable. Violation breaks the workflow.
 7. **State your current phase in every response.** A one-line preamble like `[wave-2, gate-1 reached, processing aborts]` so the human can see drift at a glance.
 8. **Never amend or force-push merged commits.** Always create new commits and PRs.
 9. **Never auto-merge `agent-tdd/<task>` to `<base>`** (`<base>` is read from `meta.json`; set explicitly by the human in Wave 0 — never defaulted, never inferred from the current branch). Final integration is human-confirmed.
+10. **Verification surfaces are wave debt.** When the wave's stated verification (smoke, e2e, strict-mode build, integration check) surfaces real bugs, those bugs belong to *this* wave. Do not propose downscoping, pre-stubs, or "open a follow-up issue tagged for someone else" as a resolution. Do not present compromise menus to the human. Re-read PROTOCOL.md §1.5 (Standards) for the full filter — those six principles override your instinct to be efficient.
 
 ---
 
