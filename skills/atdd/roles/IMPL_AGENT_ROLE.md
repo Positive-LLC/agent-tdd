@@ -82,7 +82,15 @@ Do:
 
 ### Step 4: Commit and push
 
-When the local test suite passes:
+Before pushing, run the **full pre-push validation**:
+
+- Run **every test that is runnable locally** — not just the new tests for this issue. The goal is to catch regressions in unrelated code paths before they reach CI.
+- It is acceptable to **skip tests that require external resources unavailable in this environment** — e.g. tests that hit a real third-party API, depend on credentials you don't have, or need infrastructure (live DB, network service) that isn't running. CI will run those.
+  - Use the project's normal mechanism to skip them (env var, marker, tag, separate command). Don't edit tests to skip them.
+  - If you can't tell whether a failing test is a "needs external resource" case or a real regression you caused, treat it as a real regression.
+- All locally-runnable tests must pass — both the contract tests for this issue and the rest of the suite. If a pre-existing test was already broken on `${ROOT_BRANCH}` before your changes (verify by checking out `${ROOT_BRANCH}` and running it), note that in the PR body but don't treat it as your failure.
+
+When the full locally-runnable test suite passes:
 
 ```bash
 git add <implementation files>
@@ -106,7 +114,8 @@ Closes #${ISSUE_NUM}.
 <1–3 bullets describing the change>
 
 ## Test plan
-- [x] \`<test command>\` passes locally
+- [x] Full locally-runnable test suite passes (\`<test command>\`)
+- [x] Skipped (deferred to CI): \`<list any suites skipped because they require external resources, or "none">\`
 EOF
 )"
 ```
@@ -246,6 +255,8 @@ This table is your decision tree. Apply it actively, not just at the end.
 | After **3 distinct, plausible** implementation attempts targeting the apparent intent of the assertions, the tests still fail with the **same** assertion error pattern (suggesting the assertion is logically inconsistent or testing the wrong thing) | 🛑 **abort** |
 | Tests require infrastructure clearly outside the issue's stated scope (e.g. tests assume a database when the issue is about a pure function) | 🛑 **abort** |
 | **5+ varied** implementation attempts, tests still red, but the test contract appears valid and the problem seems genuinely hard | ❌ **gave-up** (open PR with explanation if you have a partial implementation; else no PR) |
+| Contract tests green, but **other locally-runnable tests** fail and bisecting shows your changes caused the regression | Treat as still-implementing — fix the regression, then re-run the full local suite. If after a couple of fix attempts you cannot eliminate the regression, ❌ **gave-up** (do not push) |
+| Contract tests green, an unrelated locally-runnable test fails, and it **also fails on `${ROOT_BRANCH}`** with no changes | Pre-existing breakage — note in PR body, proceed to push |
 | Tests green, CI green | ✅ **success** |
 | Tests green, CI red | ❌ **gave-up** (after one CI fix attempt; see Step 6) |
 
