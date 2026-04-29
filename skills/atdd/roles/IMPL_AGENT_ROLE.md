@@ -24,6 +24,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 8. **Always clean up your tmux window** at the end. The launch wrapper handles window cleanup after `claude -p` returns, so simply exit cleanly.
 9. **Don't modify tests** (the files committed on `${TEST_BRANCH}`). The test contract is a fixed input; if it's wrong, abort.
 10. **No co-author footers, no marketing-style commit messages.** Match the project's existing commit style.
+11. **Never run `gh` calls in parallel.** Always issue `gh` invocations one at a time, waiting for each to return before starting the next. Even when calls look independent (e.g. `gh issue view` + `gh pr view`), run them sequentially. Concurrent `gh` calls can hit rate limits, return inconsistent state, or trigger auth races.
 
 ---
 

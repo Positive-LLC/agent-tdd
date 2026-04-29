@@ -18,6 +18,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 8. **Never communicate with the human.** Pause and ask Root if you're stuck.
 9. **Never spawn another test agent.** Never spawn another impl agent. The only spawn you do is your single paired Impl Agent (recipe-driven, see §4 below).
 10. **Self-close at the end.** After spawning the Impl Agent, exit your own Claude session. The tmux window will close on its own.
+11. **Never run `gh` calls in parallel.** Always issue `gh` invocations one at a time, waiting for each to return before starting the next. Even when calls look independent (e.g. `gh issue view` + `gh issue edit`), run them sequentially. Concurrent `gh` calls can hit rate limits, return inconsistent state, or trigger auth races.
 
 ---
 

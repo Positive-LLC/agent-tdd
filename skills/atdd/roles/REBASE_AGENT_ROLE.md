@@ -17,6 +17,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 7. **Atomic status writes:** `<name>.tmp` then `mv`.
 8. **Never communicate with the human.** Status file is the only signal.
 9. **Always clean up your tmux window** at the end (the spawn command appends `; tmux kill-window`).
+10. **Never run `gh` calls in parallel.** Always issue `gh` invocations one at a time, waiting for each to return before starting the next. Even when calls look independent, run them sequentially. Concurrent `gh` calls can hit rate limits, return inconsistent state, or trigger auth races.
 
 ---
 
