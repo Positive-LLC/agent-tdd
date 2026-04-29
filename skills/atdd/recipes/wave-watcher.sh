@@ -19,7 +19,11 @@ ROOT_ID="$1"
 WAVE="$2"
 EXPECTED="$3"
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# Recover the main repo's working tree regardless of caller's cwd. Root runs
+# in its own worktree (.agent-tdd/<root-id>/root/); --show-toplevel would
+# return that path. --git-common-dir always points at <main-repo>/.git.
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)"
+[[ -n "${REPO_ROOT}" ]] || REPO_ROOT="$(pwd)"
 STATUS_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}/wave-${WAVE}/status"
 mkdir -p "${STATUS_DIR}"
 

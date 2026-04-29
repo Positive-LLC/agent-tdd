@@ -15,11 +15,12 @@ What's in place:
 - ✅ `SKILL.md` (Root bootstrap + invariants)
 - ✅ `PROTOCOL.md` (full operational spec, re-read at every phase boundary)
 - ✅ Role markdowns for all three spawned-agent kinds (test, impl, rebase)
-- ✅ Six recipe scripts (init, spawn-test, spawn-impl, wave-watcher, prune, notify)
+- ✅ Seven recipe scripts (init, spawn-test, spawn-impl, wave-watcher, wave-end-cleanup, terminate-root, notify)
 - ✅ Issue template (§5.2 schema)
 - ✅ Atomic status-write protocol
 - ✅ Background-Bash event-watcher (single-shot, no timeout)
 - ✅ Auto-merge + rebase ladder up to rung 4
+- ✅ Root runs in its own worktree (`.agent-tdd/<root-id>/root/`) — multiple concurrent Roots in one repo no longer share the main worktree's HEAD/index. Root ID is claimed atomically via `mkdir`. (v0.2.0)
 
 Not yet validated end-to-end. See **Smoke-Test Risks** below for the specific things to watch when running the first real workflow.
 
@@ -125,7 +126,7 @@ In rough priority order. Each item is a candidate for a v2 issue once v1 is vali
 - **Mode-enforcement hooks.** `PreToolUse` hook that rejects human-initiated tool calls during a wave (e.g. block direct `gh` calls when Root is in autopilot), reducing the chance of human-induced state drift.
 - **Periodic `git merge main` into the Root branch** between waves, automated.
 - **Backlog visualization.** A dashboard skill that renders the current `.agent-tdd/<root-id>/` state + GitHub labels as a tree, for the human to skim.
-- **Multi-root coordination.** Today, multiple concurrent Roots are independent. Adding a "shared dedup" check across Roots would reduce overlap.
+- **Multi-root cross-dedup.** Concurrent Roots in one repo are now structurally safe at the git layer (each runs in its own worktree on its own integration branch — see Status). What's still missing: a shared dedup check so Root A doesn't open an `agent-tdd:pending` issue that Root B is already working on. Today each Root's dedup query filters by `agent-tdd:root-<id>`, so cross-Root overlap is invisible. Add a layer that ignores the root-id label when dedup'ing, OR have agents register a "claim" label early so other Roots can see in-flight scope.
 - **Multi-user namespacing on a shared repo.** The plugin assumes one user per repo. Two users running concurrent waves on the same GitHub repo would collide on: (a) **`agent-tdd/<task>` integration branches** — the slug is human-supplied, both users picking `sync-fixes` collide on push; (b) **`agent-tdd:root-<id>` labels** — each user computes `root-1` independently from local `.agent-tdd/`, so issues across users all get the same label and per-user filtering breaks; (c) **backlog activation race** — both users' Wave 2 could pick up the same `agent-tdd:pending` issue; (d) **layer-1 dedup scope** — agents filter `agent-tdd:pending --label agent-tdd:root-<id>`, so they only see their own user's backlog and won't dedup against the other user's in-flight issues. (Issue/PR numbers are GitHub-unique per repo so safe; `.agent-tdd/<root-id>/` dirs are local-only and gitignored so safe.) Fix shape: namespace everything by `gh api user --jq .login` — Root ID becomes `<gh-user>-<n>`, integration branches `agent-tdd/<gh-user>/<task>`, labels `agent-tdd:root-<gh-user>-<n>`. Tradeoff: longer branch names; PROTOCOL.md examples and the SKILL.md root-id derivation step need updating; existing single-user state needs a migration shim or clean break. Add when the plugin gets a second user.
 
 ### Longer-term / speculative

@@ -25,7 +25,10 @@ die() { printf '[wave-end-cleanup] ERROR: %s\n' "$*" >&2; exit 1; }
 ROOT_ID="$1"
 WAVE="$2"
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+# Recover the main repo's working tree regardless of caller's cwd. Root runs
+# in its own worktree (.agent-tdd/<root-id>/root/); --show-toplevel would
+# return that path. --git-common-dir always points at <main-repo>/.git.
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
 STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREES_DIR="${STATE_DIR}/worktrees"

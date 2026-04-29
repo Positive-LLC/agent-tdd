@@ -4,11 +4,18 @@
 # Usage:  init-root.sh <root-task-slug> [base-branch]
 #
 # Effects:
-#   - Determines next available root-id (root-1, root-2, ...).
-#   - Creates integration branch `agent-tdd/<root-task-slug>` off <base-branch>.
+#   - Atomically claims the next available root-id (root-1, root-2, ...) by
+#     using `mkdir` (without -p) as the claim primitive — race-safe under
+#     concurrent inits in the same repo.
+#   - Creates integration branch `agent-tdd/<root-task-slug>` off <base-branch>
+#     WITHOUT mutating the main worktree's HEAD (uses `git branch`, not
+#     `git checkout -b`).
 #   - Pushes integration branch to origin.
-#   - Creates `.agent-tdd/<root-id>/` and writes `meta.json`.
-#   - Ensures `.agent-tdd/` is in repo `.gitignore`.
+#   - Adds a private Root worktree at `.agent-tdd/<root-id>/root/` checked out
+#     on the integration branch. Root's tmux window will `cd` into this path.
+#   - Writes `.agent-tdd/.gitignore` containing `*` (self-contained — does NOT
+#     touch the repo's root .gitignore).
+#   - Writes `.agent-tdd/<root-id>/meta.json` (includes absolute root_worktree).
 #
 # Prints the chosen root-id to stdout (the only stdout output — Root reads it).
 # All progress messages go to stderr.
@@ -27,51 +34,68 @@ BASE_BRANCH="${2:-main}"
 
 # --- repo sanity ---
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo"
-git diff --quiet || die "working tree has unstaged changes; clean up first"
-git diff --cached --quiet || die "working tree has staged changes; clean up first"
 
-# --- choose root-id ---
-mkdir -p .agent-tdd
-existing=$(ls .agent-tdd 2>/dev/null | grep -E '^root-[0-9]+$' || true)
-if [[ -z "$existing" ]]; then
-  next=1
-else
-  next=$(echo "$existing" | sed 's/^root-//' | sort -n | tail -1)
-  next=$((next + 1))
-fi
-ROOT_ID="root-${next}"
-STATE_DIR=".agent-tdd/${ROOT_ID}"
-log "chose root-id: ${ROOT_ID}"
+# Resolve the main repo's working tree, regardless of the caller's cwd. We use
+# --git-common-dir (always points at <main-repo>/.git, even from a worktree)
+# so this script can be re-run after the Root worktree exists.
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
 
-[[ -d "$STATE_DIR" ]] && die "$STATE_DIR already exists; refusing to overwrite"
-mkdir -p "$STATE_DIR"
+# Cleanliness check applies to the main worktree only — Root worktrees may
+# have in-progress edits without blocking a new Root init.
+git -C "$REPO_ROOT" diff --quiet \
+  || die "main worktree has unstaged changes; clean up first"
+git -C "$REPO_ROOT" diff --cached --quiet \
+  || die "main worktree has staged changes; clean up first"
 
-# --- ensure .gitignore has .agent-tdd/ ---
-GITIGNORE=".gitignore"
-[[ -f "$GITIGNORE" ]] || touch "$GITIGNORE"
-if ! grep -qE '^\.agent-tdd/?$' "$GITIGNORE"; then
-  log "adding .agent-tdd/ to $GITIGNORE"
-  printf '\n.agent-tdd/\n' >> "$GITIGNORE"
+# --- atomic root-id claim ---
+mkdir -p "${REPO_ROOT}/.agent-tdd"
+ROOT_ID=""
+STATE_DIR=""
+for n in $(seq 1 32); do
+  candidate="${REPO_ROOT}/.agent-tdd/root-${n}"
+  # `mkdir` without -p is atomic on POSIX: succeeds iff the dir didn't exist.
+  if mkdir "${candidate}" 2>/dev/null; then
+    ROOT_ID="root-${n}"
+    STATE_DIR="${candidate}"
+    break
+  fi
+done
+[[ -n "${ROOT_ID}" ]] || die "could not claim a root-id within 32 attempts; clean up stale .agent-tdd/root-* dirs"
+log "claimed root-id: ${ROOT_ID}"
+
+# --- ensure .agent-tdd/.gitignore ---
+# Self-contained: a `.gitignore` file with `*` inside .agent-tdd/ ignores
+# everything beneath it from any worktree. Avoids editing the repo's root
+# .gitignore (which would dirty the main worktree or pollute <base>'s history).
+GITIGNORE="${REPO_ROOT}/.agent-tdd/.gitignore"
+if [[ ! -f "${GITIGNORE}" ]] || [[ "$(cat "${GITIGNORE}")" != "*" ]]; then
+  log "writing ${GITIGNORE}"
+  printf '*\n' > "${GITIGNORE}"
 fi
 
 # --- verify base branch exists ---
-git show-ref --verify --quiet "refs/heads/${BASE_BRANCH}" \
-  || git show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}" \
+git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/${BASE_BRANCH}" \
+  || git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}" \
   || die "base branch '$BASE_BRANCH' not found locally or on origin"
 
-# --- create + push integration branch ---
+# --- create integration branch (no main-worktree HEAD mutation) ---
 INTEGRATION_BRANCH="agent-tdd/${ROOT_TASK}"
-if git show-ref --verify --quiet "refs/heads/${INTEGRATION_BRANCH}"; then
+if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/${INTEGRATION_BRANCH}"; then
   die "branch '${INTEGRATION_BRANCH}' already exists locally; pick a different task slug"
 fi
-if git ls-remote --exit-code --heads origin "${INTEGRATION_BRANCH}" >/dev/null 2>&1; then
+if git -C "$REPO_ROOT" ls-remote --exit-code --heads origin "${INTEGRATION_BRANCH}" >/dev/null 2>&1; then
   die "branch '${INTEGRATION_BRANCH}' already exists on origin; pick a different task slug"
 fi
 
 log "creating ${INTEGRATION_BRANCH} from ${BASE_BRANCH}"
-git fetch origin "${BASE_BRANCH}" --quiet
-git checkout -b "${INTEGRATION_BRANCH}" "origin/${BASE_BRANCH}"
-git push -u origin "${INTEGRATION_BRANCH}"
+git -C "$REPO_ROOT" fetch origin "${BASE_BRANCH}" --quiet
+git -C "$REPO_ROOT" branch "${INTEGRATION_BRANCH}" "origin/${BASE_BRANCH}"
+git -C "$REPO_ROOT" push -u origin "${INTEGRATION_BRANCH}"
+
+# --- add Root worktree on the integration branch ---
+ROOT_WORKTREE="${STATE_DIR}/root"
+log "adding Root worktree at ${ROOT_WORKTREE}"
+git -C "$REPO_ROOT" worktree add "${ROOT_WORKTREE}" "${INTEGRATION_BRANCH}"
 
 # --- meta.json ---
 META="${STATE_DIR}/meta.json"
@@ -82,7 +106,9 @@ cat > "${META}" <<EOF
   "base": "${BASE_BRANCH}",
   "max_waves": 10,
   "wave_size_cap": 5,
-  "current_wave": 0
+  "current_wave": 0,
+  "root_worktree": "${ROOT_WORKTREE}",
+  "repo_root": "${REPO_ROOT}"
 }
 EOF
 log "wrote ${META}"

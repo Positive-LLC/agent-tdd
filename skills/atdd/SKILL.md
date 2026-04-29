@@ -36,9 +36,8 @@ These are non-negotiable. Violation breaks the workflow.
 In order, before responding to the human:
 
 1. **Read the protocol:** `Read(${CLAUDE_SKILL_DIR}/PROTOCOL.md)`. This loads the canonical operational spec into your context.
-2. **Determine your Root ID.** Run `ls .agent-tdd/ 2>/dev/null | grep -E '^root-[0-9]+$' | sort -V | tail -1`. If empty, you are `root-1`. Else, increment the highest existing.
-3. **Note your tmux window.** You're running inside a window in the `roots` session. Find your window name: `tmux display-message -p '#W'`. It should be `root-<id>`. If not, rename: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
-4. **Begin Wave 0** using `$ARGUMENTS` as the seed for spec discussion (see "Wave 0 behavior" below).
+2. **Note your tmux window.** You're running inside a window in the `roots` session. Find your window name: `tmux display-message -p '#W'`. It should be `root-<id>` once `init-root.sh` runs in step 5 of Wave 0; rename if not.
+3. **Begin Wave 0** using `$ARGUMENTS` as the seed for spec discussion (see "Wave 0 behavior" below). Your Root ID is assigned by `init-root.sh` later in Wave 0 (atomic claim — race-safe under concurrent Roots in the same repo). You do NOT pre-compute it.
 
 ---
 
@@ -52,9 +51,10 @@ The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 2. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
 3. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
 4. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
-5. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch>`. Defaults: `base-branch=main`. This creates the integration branch, writes `meta.json`, ensures `.agent-tdd/` is gitignored.
-6. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
-7. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
+5. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch>`. Defaults: `base-branch=main`. This atomically claims your Root ID, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
+6. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
+7. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
+8. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
 
 **Discussion shape — do this:**
 - Be a thoughtful test-spec collaborator. The human's high-leverage activity is shaping the test cases.
@@ -78,11 +78,12 @@ What lives where:
 | `roles/TEST_AGENT_ROLE.md` | Self-contained spawn prompt for test agents. Concatenate with per-issue task block. |
 | `roles/IMPL_AGENT_ROLE.md` | Self-contained spawn prompt for impl agents. Includes effort heuristic. |
 | `roles/REBASE_AGENT_ROLE.md` | Self-contained one-shot rebase agent prompt (rung 2 of §3.7 ladder). |
-| `recipes/init-root.sh` | Bootstrap Root branch + state dir + meta.json. Run once in Wave 0. |
+| `recipes/init-root.sh` | Bootstrap Root: claim id, create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch claude, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + claude -p. |
 | `recipes/wave-watcher.sh` | Background-Bash event watcher. **Issue once per wave with `run_in_background=true`.** |
-| `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove worktrees and delete merged issue branches (local+remote). |
+| `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove child worktrees and delete merged issue branches (local+remote). |
+| `recipes/terminate-root.sh` | Termination cleanup: remove Root's worktree, delete integration branch (local+remote). Run once at §8. |
 | `recipes/notify-human.sh` | tmux rename-window + display-message + notify-send/osascript. |
 | `templates/ISSUE_TEMPLATE.md` | §5.2 structured issue body. Use with `gh issue create --body-file`. |
 
@@ -92,11 +93,12 @@ What lives where:
 
 | Path | Purpose |
 |---|---|
-| `meta.json` | Root config (root_id, task, base, max_waves, wave_size_cap, current_wave) |
+| `meta.json` | Root config (root_id, task, base, max_waves, wave_size_cap, current_wave, root_worktree, repo_root) |
+| `root/` | Root's private worktree on `agent-tdd/<task>` (your cwd from Wave 0 onward) |
 | `wave-<N>/manifest.json` | Issues in this wave + expected_terminal_count |
 | `wave-<N>/status/issue-<X>.{done,failed,aborted}` | Terminal status (atomic write) |
 | `wave-<N>/status/issue-<X>.paused` | Transient pause; you delete after answering |
-| `worktrees/issue-<N>-{tests,impl}/` | Worktrees (pruned at wave end) |
+| `worktrees/issue-<N>-{tests,impl}/` | Per-issue child worktrees (pruned at wave end) |
 | `feedback.md` | (optional) Human input received during a wave; you read at next housekeeping |
 
 ---

@@ -62,14 +62,20 @@ State and worktrees live under `.agent-tdd/`, namespaced by Root ID. The directo
 
 ### 2.3 Path discipline
 
-**Use absolute paths in agent prompts and status writes.** Worktrees see their own working tree, not the main repo's. The `.agent-tdd/<root-id>/` directory only exists in the main repo's working tree (because it's gitignored). When you spawn a child agent, pass the absolute path of `.agent-tdd/<root-id>/wave-N/status/` in its initial prompt.
+**Use absolute paths in agent prompts and status writes.** Every Root and child agent operates inside a git worktree, not the main repo working tree. `.agent-tdd/<root-id>/` lives in the main repo's working tree (gitignored via `.agent-tdd/.gitignore`). When you spawn a child agent, pass the absolute path of `.agent-tdd/<root-id>/wave-N/status/` in its initial prompt.
 
-Compute the absolute path once at the top of each phase:
+**Your cwd is `.agent-tdd/<root-id>/root/`** from Wave 0 onward — that is your private worktree on `agent-tdd/<task>`. Use `git -C "${REPO_ROOT}"` to operate on the main repo's `.git` (e.g. for `worktree add`, branch ops). The main worktree's HEAD is whatever the human left it on; never mutate it.
+
+Compute the absolute paths once at the top of each phase:
 
 ```bash
-ROOT_ID=root-1   # or whatever; set in meta.json
+ROOT_ID=root-1   # set by init-root.sh; also written to meta.json
 WAVE=1           # current wave number
-STATE_DIR="$(pwd)/.agent-tdd/${ROOT_ID}"
+# Recover REPO_ROOT regardless of cwd. --git-common-dir always points at
+# <main-repo>/.git, even from a worktree (Root or child).
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+ROOT_WORKTREE="${STATE_DIR}/root"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREES_DIR="${STATE_DIR}/worktrees"
 ```
@@ -85,11 +91,13 @@ Written once during Wave 0; re-read at the start of each wave.
   "base": "main",
   "max_waves": 10,
   "wave_size_cap": 5,
-  "current_wave": 1
+  "current_wave": 1,
+  "root_worktree": "/abs/path/to/repo/.agent-tdd/root-1/root",
+  "repo_root": "/abs/path/to/repo"
 }
 ```
 
-- `root_id` is unique across concurrent Roots on this host. The first Root is `root-1`; if `root-1` already exists, use `root-2`, etc.
+- `root_id` is unique across concurrent Roots in this repo. `init-root.sh` claims it atomically via `mkdir` (race-safe under concurrent inits). The first Root is `root-1`; subsequent Roots get the next free `root-N`.
 - `task` matches `^[a-z0-9-]+$`. Used for the integration branch name `agent-tdd/<task>`.
 - `base` defaults to `main` but may be configured.
 - `max_waves` defaults to 10. Hard cap.
@@ -250,7 +258,7 @@ On Gate 1 (`agent-terminal`), perform in order:
    - Second abort in this wave for this issue: label `agent-tdd:failed`, comment on the issue with both abort reasons, escalate to human via dashboard window rename + `notify-send`.
 2. **Dedup static issues** created during the wave (§4.3 layer 2).
 3. **Drive Gate 2 (wave-merged).** For each `.done` PR, attempt `gh pr merge --squash --auto`. On conflict, follow the rebase ladder (§3.7).
-4. **Re-baseline.** Pull the updated Root branch into your own working tree: `git fetch origin && git checkout agent-tdd/<task> && git pull --ff-only origin agent-tdd/<task>`.
+4. **Re-baseline.** Your cwd is already on `agent-tdd/<task>` (your Root worktree). Just pull: `git fetch origin && git pull --ff-only origin agent-tdd/<task>`. **No `git checkout`** — the main repo's main worktree is not yours to mutate.
 5. **Wave Review (autopilot).** Inspect the dedup'd backlog. Default: pick the next wave's issues yourself. Escalate to human ONLY if:
    - The backlog is empty (workflow may be terminating; see §8).
    - Issue selection is genuinely ambiguous (e.g. competing scopes that need human prioritization).
@@ -274,7 +282,7 @@ When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
 
 | Rung | Conflict type | Action |
 |---|---|---|
-| 1 | Trivial (mechanical: import order, formatting, lock files) | Rebase yourself in a temporary worktree. Push. Re-run CI via `gh pr checks --watch`. Merge if green. |
+| 1 | Trivial (mechanical: import order, formatting, lock files) | Add a temporary worktree off the main repo: `git -C "${REPO_ROOT}" worktree add "${STATE_DIR}/rebase-pr<#>" issue-<N>-impl`. Rebase, push, re-run CI via `gh pr checks --watch`. Merge if green. Remove the temp worktree afterwards. **Do not** mutate your own Root worktree's HEAD. |
 | 2 | Non-trivial but mechanical | Spawn a one-shot **rebase agent** (`claude -p`, single session, single PR, see `${CLAUDE_SKILL_DIR}/roles/REBASE_AGENT_ROLE.md`). If green after rebase, merge. If not, escalate to rung 3. |
 | 3 | Semantic (e.g. two PRs implement an overlapping feature in incompatible ways) | Cannot resolve. Label PR `agent-tdd:rebase-blocked`. Name the offending PRs in the dashboard window title. Wait for human to either (a) resolve manually and signal you to retry merge, or (b) close one PR (defer to a subsequent wave) and let you proceed. |
 | 4 | Rebase regression (rebased cleanly, but CI now fails) | Label PR `agent-tdd:rebase-regression`. Escalate to human. **Do not** auto-spawn a fix agent — regressions imply the test contract may need adjustment, which is a human call. |
@@ -523,14 +531,14 @@ The workflow ends when one of:
 
 On clean termination, you:
 
-1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — usually `main`, but may be any branch the human configured at Wave 0). Do not auto-merge.
-2. After human confirms: `gh pr create --base <base> --head agent-tdd/<task>` (or `git merge` if the human prefers). Close all `agent-tdd:done` issues that are tied to merged PRs.
-3. **Delete the integration branch** once the final merge is confirmed (the content is now in `<base>`):
+1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — usually `main`, but may be any branch the human configured at Wave 0). Do not auto-merge. Recommend `gh pr create --base <base> --head agent-tdd/<task>` rather than `git merge` — `git merge` would require switching the main worktree's HEAD, which is not yours to do.
+2. After human confirms and the PR is merged: close all `agent-tdd:done` issues that are tied to merged PRs.
+3. **Run termination cleanup** if the human accepted the merge:
    ```bash
-   git push origin --delete "agent-tdd/<task>" || true
-   git branch -D "agent-tdd/<task>" || true
+   cd "${REPO_ROOT}"   # leave your Root worktree before it gets removed
+   bash ${CLAUDE_SKILL_DIR}/recipes/terminate-root.sh <root-id> <task>
    ```
-   Skip this step if the human declined to merge or kept the branch open intentionally.
+   This removes your Root worktree, deletes `agent-tdd/<task>` on origin, and deletes the local branch — in that order (cannot delete a branch checked out in any worktree). Idempotent. Skip this step if the human declined to merge or kept the branch open intentionally.
 4. Update the dashboard: `tmux rename-window -t roots:root-<id> 'root-<id>: COMPLETE ✅'`.
 5. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
 6. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").
@@ -539,7 +547,7 @@ On clean termination, you:
 
 ## 9. Glossary
 
-- **Root Agent** — the orchestrator (you). Lives in `roots:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface.
+- **Root Agent** — the orchestrator (you). Lives in `roots:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.
@@ -569,7 +577,7 @@ On clean termination, you:
 - [ ] Process `.aborted` first (re-spawn or escalate)
 - [ ] Run dedup pass on static issues
 - [ ] Drive Gate 2: auto-merge `.done` PRs, climb rebase ladder on conflict
-- [ ] Re-baseline (`git pull --ff-only`)
+- [ ] Re-baseline in your Root worktree (`git fetch && git pull --ff-only origin agent-tdd/<task>`)
 - [ ] Wave Review: pick next wave or terminate
 - [ ] Wave-end cleanup (`wave-end-cleanup.sh`: prune worktrees, delete merged issue branches local+remote)
 - [ ] Bump `meta.json:current_wave` and fire Wave N+1
@@ -583,7 +591,7 @@ On clean termination, you:
 **On termination:**
 - [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; default `main`)
 - [ ] Close `agent-tdd:done` issues tied to merged PRs
-- [ ] Delete `agent-tdd/<task>` branch (local + remote) after final merge confirmed
+- [ ] Run `terminate-root.sh <root-id> <task>` after final merge confirmed (cd out of Root worktree first; recipe removes worktree + deletes branch local+remote)
 - [ ] Final dashboard rename + notification
 - [ ] Self-close after human confirms
 
