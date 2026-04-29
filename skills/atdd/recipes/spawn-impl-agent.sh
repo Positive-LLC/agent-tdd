@@ -41,6 +41,12 @@ ROOT_BRANCH="agent-tdd/${ROOT_TASK}"
 WINDOW="issue-${ISSUE_NUM}-PR"
 TARGET="${WORKSPACE_SESSION}:${WINDOW}"
 
+# --- read gh_account from meta.json (required) ---
+META="${STATE_DIR}/meta.json"
+[[ -f "${META}" ]] || die "meta.json not found at ${META}; was init-root.sh run?"
+GH_ACCOUNT="$(grep -E '"gh_account"' "${META}" | sed -E 's/.*"gh_account"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[[ -n "${GH_ACCOUNT}" ]] || die "meta.json:gh_account is empty or missing; bump the Root with a re-init"
+
 mkdir -p "${STATUS_DIR}"
 
 # --- create impl worktree (stacked off test branch) ---
@@ -84,6 +90,7 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
   echo "IMPL_BRANCH=${IMPL_BRANCH}"
   echo "ROOT_BRANCH=${ROOT_BRANCH}"
   echo "ROOT_TASK=${ROOT_TASK}"
+  echo "GH_ACCOUNT=${GH_ACCOUNT}"
   echo
   echo "Begin now."
 } > "${PROMPT_FILE}"

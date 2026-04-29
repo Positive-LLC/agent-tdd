@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # init-root.sh — bootstrap a Root for Agent TDD.
 #
-# Usage:  init-root.sh <root-task-slug> <base-branch>
+# Usage:  init-root.sh <root-task-slug> <base-branch> <gh-account>
 #
-# Both arguments are required. There is no default for <base-branch>: Root
-# must explicitly ask the human in Wave 0 and pass the answer through verbatim.
-# This guards against silent assumption of `main`.
+# All three arguments are required. There is no default for <base-branch> or
+# <gh-account>: Root must explicitly ask the human in Wave 0 and pass the
+# answers through verbatim. This guards against silent assumption of `main`
+# and silent reuse of whichever GitHub account `gh` happened to have active.
 #
 # Effects:
 #   - Atomically claims the next available root-id (root-1, root-2, ...) by
@@ -30,12 +31,28 @@ log() { printf '[init-root] %s\n' "$*" >&2; }
 die() { printf '[init-root] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # --- args ---
-[[ $# -ge 2 ]] || die "usage: init-root.sh <root-task-slug> <base-branch> (both required; no default for base-branch — ask the human in Wave 0)"
+[[ $# -ge 3 ]] || die "usage: init-root.sh <root-task-slug> <base-branch> <gh-account> (all required; no defaults — ask the human in Wave 0)"
 ROOT_TASK="$1"
 BASE_BRANCH="$2"
+GH_ACCOUNT="$3"
 [[ -n "$BASE_BRANCH" ]] || die "base-branch must be non-empty (got: '')"
+[[ -n "$GH_ACCOUNT" ]] || die "gh-account must be non-empty (got: '')"
 
 [[ "$ROOT_TASK" =~ ^[a-z0-9-]+$ ]] || die "root-task must match ^[a-z0-9-]+$ (got: $ROOT_TASK)"
+
+# --- validate gh account exists, then make it active ---
+# Parse `gh auth status` for "Logged in to github.com account <name>" lines.
+# Failing fast here is much friendlier than letting a child agent's `gh pr
+# create` fail mid-wave under the wrong identity.
+command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
+GH_STATUS="$(gh auth status 2>&1 || true)"
+if ! grep -qE "Logged in to github\.com account ${GH_ACCOUNT}( |$|\))" <<<"$GH_STATUS"; then
+  die "gh account '${GH_ACCOUNT}' is not logged in. Run \`gh auth login\` first, or pick a different account. \`gh auth status\` output:
+${GH_STATUS}"
+fi
+log "switching gh active account to ${GH_ACCOUNT}"
+gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
+  || die "failed to \`gh auth switch --user ${GH_ACCOUNT}\`"
 
 # --- repo sanity ---
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo"
@@ -109,6 +126,7 @@ cat > "${META}" <<EOF
   "root_id": "${ROOT_ID}",
   "task": "${ROOT_TASK}",
   "base": "${BASE_BRANCH}",
+  "gh_account": "${GH_ACCOUNT}",
   "max_waves": 10,
   "wave_size_cap": 5,
   "current_wave": 0,

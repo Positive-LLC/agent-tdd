@@ -31,10 +31,21 @@ This document is your complete protocol. You have no other skills loaded. You co
 - `BRANCH` — the impl branch you're rebasing (e.g. `issue-3-impl`)
 - `BASE_BRANCH` — the Root branch (e.g. `agent-tdd/<task>`)
 - `ROOT_TASK` — task slug
+- `GH_ACCOUNT` — the GitHub account name (as listed by `gh auth status`) under which all your `gh` calls must run. Set by the human in Wave 0 and persisted in `meta.json:gh_account`.
 
 ---
 
 ## §1 — Protocol
+
+### Step 0: Pin the GitHub account
+
+The human may have multiple `gh` accounts logged in. Switch to the one Root assigned before any other `gh` call:
+
+```bash
+gh auth switch --user "${GH_ACCOUNT}"
+```
+
+Run this once at the start. If it fails, write `.aborted` with `exit_reason: "gh auth switch to ${GH_ACCOUNT} failed"` and exit. Do not run any other `gh` command until this succeeds.
 
 ### Step 1: Survey the conflict
 

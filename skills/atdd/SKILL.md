@@ -49,13 +49,17 @@ The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 
 1. **Mirror back what you heard, briefly.** One paragraph. Confirm the Subject Under Test, expected behavior, success criteria.
 2. **Ask for the base branch — explicitly, every time.** Required as one of your first questions. Do **not** guess, do **not** assume `main`, do **not** use the current branch. Phrase it directly: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the human's answer before proceeding. The answer is passed verbatim to `init-root.sh` and recorded in `meta.json:base`; final integration (§8) merges back to this same branch.
-3. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
-4. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
-5. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
-6. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch>`. Both arguments are required — the recipe has no default for `<base-branch>` and will fail if omitted. This atomically claims your Root ID, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
-7. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
-8. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
-9. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
+3. **Ask for the GitHub account — explicitly, every time.** Required, no default. `gh` supports multiple logged-in accounts; the active one is whichever account `gh auth switch` last selected on this machine — possibly under a different repo's Root. Resolve it like this:
+   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from the most recent one (e.g. with `jq -r '.gh_account // empty' <file>`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo: '<account>'? (y/n, or name a different one)"`. If the human says yes, use that.
+   - **Otherwise**, run `gh auth status` and show the human the list of `Logged in to github.com account <name>` lines. Phrase: `"Which GitHub account should I use for this Root? (gh auth status: <name1>, <name2>, ...)"`. Wait for the answer.
+   - Pass the answer verbatim to `init-root.sh` as the third argument. The recipe validates it against `gh auth status` and runs `gh auth switch --user <account>` itself; you do not need to switch first. The value is persisted as `meta.json:gh_account` and propagated to every spawned child agent.
+4. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
+5. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
+6. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
+7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, validates the gh account and switches to it, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
+8. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
+9. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
+10. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
 
 **Discussion shape — do this:**
 - Be a thoughtful test-spec collaborator. The human's high-leverage activity is shaping the test cases.
@@ -79,7 +83,7 @@ What lives where:
 | `roles/TEST_AGENT_ROLE.md` | Self-contained spawn prompt for test agents. Concatenate with per-issue task block. |
 | `roles/IMPL_AGENT_ROLE.md` | Self-contained spawn prompt for impl agents. Includes effort heuristic. |
 | `roles/REBASE_AGENT_ROLE.md` | Self-contained one-shot rebase agent prompt (rung 2 of §3.7 ladder). |
-| `recipes/init-root.sh` | Bootstrap Root: claim id, create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
+| `recipes/init-root.sh` | Bootstrap Root: claim id, validate + switch gh account, create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch claude, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + claude -p. |
 | `recipes/wave-watcher.sh` | Background-Bash event watcher. **Issue once per wave with `run_in_background=true`.** |
@@ -94,7 +98,7 @@ What lives where:
 
 | Path | Purpose |
 |---|---|
-| `meta.json` | Root config (root_id, task, base, max_waves, wave_size_cap, current_wave, root_worktree, repo_root) |
+| `meta.json` | Root config (root_id, task, base, gh_account, max_waves, wave_size_cap, current_wave, root_worktree, repo_root) |
 | `root/` | Root's private worktree on `agent-tdd/<task>` (your cwd from Wave 0 onward) |
 | `wave-<N>/manifest.json` | Issues in this wave + expected_terminal_count |
 | `wave-<N>/status/issue-<X>.{done,failed,aborted}` | Terminal status (atomic write) |

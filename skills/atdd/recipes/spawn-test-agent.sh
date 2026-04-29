@@ -43,6 +43,12 @@ ROOT_BRANCH="agent-tdd/${ROOT_TASK}"
 WINDOW="issue-${ISSUE_NUM}"
 TARGET="${WORKSPACE_SESSION}:${WINDOW}"
 
+# --- read gh_account from meta.json (required) ---
+META="${STATE_DIR}/meta.json"
+[[ -f "${META}" ]] || die "meta.json not found at ${META}; was init-root.sh run?"
+GH_ACCOUNT="$(grep -E '"gh_account"' "${META}" | sed -E 's/.*"gh_account"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[[ -n "${GH_ACCOUNT}" ]] || die "meta.json:gh_account is empty or missing; bump the Root with a re-init"
+
 mkdir -p "${STATUS_DIR}"
 
 # --- create worktree ---
@@ -104,6 +110,7 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
   echo "PLUGIN_DIR=${PLUGIN_DIR}"
   echo "WORKSPACE_SESSION=${WORKSPACE_SESSION}"
   echo "ROOT_TASK=${ROOT_TASK}"
+  echo "GH_ACCOUNT=${GH_ACCOUNT}"
   echo
   echo "Begin now."
 } > "${PROMPT_FILE}"

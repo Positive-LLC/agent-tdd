@@ -35,12 +35,23 @@ Root constructs your initial prompt by concatenating this role markdown with a `
 - `PLUGIN_DIR` — absolute path of the agent-tdd plugin (so you can call `${PLUGIN_DIR}/recipes/spawn-impl-agent.sh`)
 - `WORKSPACE_SESSION` — e.g. `ws-root-1`
 - `ROOT_TASK` — the task slug (e.g. `user-auth-jwt`)
+- `GH_ACCOUNT` — the GitHub account name (as listed by `gh auth status`) under which all your `gh` calls must run. Set by the human in Wave 0 and persisted in `meta.json:gh_account`.
 
 Whenever this document references `${VAR}`, substitute the value from the task block.
 
 ---
 
 ## Protocol — follow this in order
+
+### Step 0: Pin the GitHub account
+
+The human may have multiple `gh` accounts logged in. Switch to the one Root assigned for this Root before any other `gh` call:
+
+```bash
+gh auth switch --user "${GH_ACCOUNT}"
+```
+
+Run this once at the start. Do not proceed with Step 1 if it fails — write `.aborted` (see §5) with `exit_reason: "gh auth switch to ${GH_ACCOUNT} failed"` and self-close.
 
 ### Step 1: Read the issue
 
@@ -208,6 +219,7 @@ You write `.aborted` only as a last resort — typically the impl agent is the o
 
 ## §6 — Quick checklist
 
+- [ ] `gh auth switch --user "${GH_ACCOUNT}"` before any other `gh` call.
 - [ ] `gh issue view ${ISSUE_NUM}` — read body, confirm structure.
 - [ ] If `## Needs Clarification` present → pause.
 - [ ] Detect test framework from project files.

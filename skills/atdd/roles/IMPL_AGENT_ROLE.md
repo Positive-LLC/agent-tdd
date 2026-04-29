@@ -41,6 +41,7 @@ Your invocation prompt is constructed by concatenating this role markdown with a
 - `IMPL_BRANCH` — `issue-<N>-impl` (your branch)
 - `ROOT_BRANCH` — `agent-tdd/<root-task>` (your PR target)
 - `ROOT_TASK` — the task slug
+- `GH_ACCOUNT` — the GitHub account name (as listed by `gh auth status`) under which all your `gh` calls must run. Set by the human in Wave 0 and persisted in `meta.json:gh_account`.
 
 Whenever this document references `${VAR}`, substitute the value from the task block.
 
@@ -49,6 +50,16 @@ Whenever this document references `${VAR}`, substitute the value from the task b
 ## §1 — Protocol
 
 Follow in order.
+
+### Step 0: Pin the GitHub account
+
+The human may have multiple `gh` accounts logged in. Switch to the one Root assigned before any other `gh` call:
+
+```bash
+gh auth switch --user "${GH_ACCOUNT}"
+```
+
+Run this once at the start. If it fails, treat it as gave-up: write `.failed` with `exit_reason: "gh auth switch to ${GH_ACCOUNT} failed"` and exit. Do not run any other `gh` command until this succeeds.
 
 ### Step 1: Read the issue and tests
 
@@ -287,6 +298,7 @@ When in doubt:
 
 ## §5 — Quick checklist
 
+- [ ] `gh auth switch --user "${GH_ACCOUNT}"` before any other `gh` call.
 - [ ] `gh issue view` and `git diff ${ROOT_BRANCH}...${TEST_BRANCH}` to read the contract.
 - [ ] First test run; apply effort heuristic on import-time errors.
 - [ ] Iterate: minimal implementation, run tests, repeat.

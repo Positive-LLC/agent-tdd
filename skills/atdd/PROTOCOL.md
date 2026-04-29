@@ -89,6 +89,7 @@ Written once during Wave 0; re-read at the start of each wave.
   "root_id": "root-1",
   "task": "<root-task-slug>",
   "base": "main",
+  "gh_account": "willie-chang",
   "max_waves": 10,
   "wave_size_cap": 5,
   "current_wave": 1,
@@ -100,6 +101,7 @@ Written once during Wave 0; re-read at the start of each wave.
 - `root_id` is unique across concurrent Roots in this repo. `init-root.sh` claims it atomically via `mkdir` (race-safe under concurrent inits). The first Root is `root-1`; subsequent Roots get the next free `root-N`.
 - `task` matches `^[a-z0-9-]+$`. Used for the integration branch name `agent-tdd/<task>`.
 - `base` is set explicitly by the human in Wave 0. There is no default — Root must ask. Whatever the human names is what `init-root.sh` branches off and what §8 merges back into.
+- `gh_account` is the GitHub account name (as listed by `gh auth status`) under which all `gh` calls in this Root and its child agents will run. Set explicitly by the human in Wave 0 (Root may propose reusing the value from any prior `.agent-tdd/root-*/meta.json` in this repo). `init-root.sh` validates it against `gh auth status` and runs `gh auth switch --user <gh_account>` before persisting. Every spawned child agent receives `GH_ACCOUNT` in its task block and re-runs `gh auth switch --user "$GH_ACCOUNT"` before its own gh calls — necessary because parallel Roots in *other* repos may flip the global active account.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
@@ -172,14 +174,19 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 This is the only phase where you converse freely with the human.
 
 1. **Ask the base branch — explicitly, every time.** Required as one of your first questions, before substantive spec discussion. Do **not** guess. Do **not** assume `main`. Do **not** read the current branch and use that. Phrase it directly to the human: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the answer; the literal value is passed to `init-root.sh` as `<base>`, persisted in `meta.json:base`, and merged back into during final integration (§8).
-2. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
-3. **Decide the Root task slug.** Ask the human if you're unsure. Validate against `^[a-z0-9-]+$`.
-4. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task> <base>`. Both arguments are required — `<base>` is the value the human gave in step 1. This:
+2. **Ask the GitHub account — explicitly, every time.** Required, no default. `gh` supports multiple logged-in accounts; whichever was last selected by `gh auth switch` is "active" globally on this machine, possibly under a different repo's Root. Resolve it like this:
+   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from each (e.g. `jq -r '.gh_account // empty'`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo: '<account>'? (y/n, or name a different one)"`.
+   - **Otherwise**, run `gh auth status` and present the `Logged in to github.com account <name>` lines: `"Which GitHub account should I use for this Root? (gh auth status: <name1>, <name2>)"`.
+   - The literal answer is passed to `init-root.sh` as `<gh-account>`, persisted in `meta.json:gh_account`, and propagated to every spawned child agent. `init-root.sh` validates it and runs `gh auth switch --user <gh-account>`; you do not need to switch first.
+3. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
+4. **Decide the Root task slug.** Ask the human if you're unsure. Validate against `^[a-z0-9-]+$`.
+5. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task> <base> <gh-account>`. All three arguments are required and come from the human's answers above. This:
+   - Validates the gh account and runs `gh auth switch --user <gh-account>`.
    - Creates `agent-tdd/<task>` off `<base>`, pushes to origin.
-   - Creates `.agent-tdd/root-<id>/meta.json`.
+   - Creates `.agent-tdd/root-<id>/meta.json` (including `gh_account`).
    - Ensures `.agent-tdd/` is in the repo `.gitignore`.
-5. **Propose Wave 1.** Lay out the issues you'd open for Wave 1: each with a Subject Under Test, a one-sentence Behavior, and a Type. Apply scope discipline (§3.6) when proposing parallel issues.
-6. **Wait for "go".** When the human says "go" (or equivalent), transition to autopilot. **From this point, do not initiate freeform conversation with the human.**
+6. **Propose Wave 1.** Lay out the issues you'd open for Wave 1: each with a Subject Under Test, a one-sentence Behavior, and a Type. Apply scope discipline (§3.6) when proposing parallel issues.
+7. **Wait for "go".** When the human says "go" (or equivalent), transition to autopilot. **From this point, do not initiate freeform conversation with the human.**
 
 ### 3.2 Wave Initiation
 
@@ -410,6 +417,8 @@ The impl agent:
 ### 5.4 Rebase agents (rung 2)
 
 You spawn these directly when an auto-rebase fails mechanically. Use the role markdown `${CLAUDE_SKILL_DIR}/roles/REBASE_AGENT_ROLE.md`. Same single-session/single-PR rules. Scope is narrow: resolve the conflict in a temp worktree, push, watch CI. If green, merge; if not, escalate to rung 3 (semantic) or rung 4 (regression).
+
+When you build the rebase agent's task block, include `GH_ACCOUNT=<value-from-meta.json>` alongside the other inputs (`PR_NUMBER`, `ROOT_ID`, `WAVE`, etc.). The role contract requires the agent to run `gh auth switch --user "$GH_ACCOUNT"` before any gh call.
 
 ### 5.5 Re-spawning aborted test agents
 
