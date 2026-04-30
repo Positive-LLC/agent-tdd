@@ -125,7 +125,7 @@ bash ${PLUGIN_DIR}/recipes/spawn-impl-agent.sh \
 The recipe:
 1. Creates the impl worktree on `issue-<N>-impl` stacked off your `issue-<N>-tests`.
 2. Opens a new tmux window `${WORKSPACE_SESSION}:issue-<N>-PR` anchored at the impl worktree.
-3. Dispatches `claude -p '<role + task block>' --permission-mode auto` via the launch wrapper (`recipes/launch-impl-agent.sh`), which captures logs and handles tmux window cleanup (fire-and-forget).
+3. Dispatches `claude -p '<role + task block>' --permission-mode bypassPermissions` via the launch wrapper (`recipes/launch-impl-agent.sh`), which captures logs and handles tmux window cleanup (fire-and-forget).
 
 You do not interact with the impl agent after spawning. It writes its own terminal status file when done.
 

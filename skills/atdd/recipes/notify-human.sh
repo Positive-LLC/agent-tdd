@@ -5,12 +5,13 @@
 #
 #   <message>   — short message (one line)
 #   <root-id>   — optional; if provided, renames the dashboard window
-#                 (roots:<root-id>) to include the message.
+#                 to include the message. The session is read from
+#                 meta.json:root_tmux_session (captured at init-root time).
 #   <style>     — optional; one of "info" (default) or "urgent". Urgent applies
 #                 a red window style.
 #
 # Effects:
-#   - tmux display-message in the `roots` session (transient banner).
+#   - tmux display-message in the dashboard session (transient banner).
 #   - tmux rename-window if <root-id> provided.
 #   - OS-level notification via notify-send (Linux) or osascript (macOS).
 #
@@ -23,14 +24,32 @@ MSG="$1"
 ROOT_ID="${2:-}"
 STYLE="${3:-info}"
 
-# Transient banner in the roots session (best-effort)
-tmux display-message -t roots: "${MSG}" 2>/dev/null || true
+# Resolve the dashboard session for this Root. We never assume `roots`; the
+# session name is whatever the human launched Claude Code from, captured by
+# init-root.sh and persisted in meta.json:root_tmux_session.
+SESSION=""
+if [[ -n "${ROOT_ID}" ]]; then
+  REPO_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd || true)"
+  META="${REPO_ROOT:-}/.agent-tdd/${ROOT_ID}/meta.json"
+  if [[ -f "${META}" ]]; then
+    SESSION="$(grep -E '"root_tmux_session"' "${META}" | sed -E 's/.*"root_tmux_session"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  fi
+fi
+# Fall back to the caller's current session if meta.json wasn't reachable.
+if [[ -z "${SESSION}" ]] && [[ -n "${TMUX:-}" ]]; then
+  SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+fi
+
+# Transient banner in the dashboard session (best-effort)
+if [[ -n "${SESSION}" ]]; then
+  tmux display-message -t "${SESSION}:" "${MSG}" 2>/dev/null || true
+fi
 
 # Rename dashboard window
-if [[ -n "${ROOT_ID}" ]]; then
-  tmux rename-window -t "roots:${ROOT_ID}" "${ROOT_ID}: ${MSG}" 2>/dev/null || true
+if [[ -n "${ROOT_ID}" ]] && [[ -n "${SESSION}" ]]; then
+  tmux rename-window -t "${SESSION}:${ROOT_ID}" "${ROOT_ID}: ${MSG}" 2>/dev/null || true
   if [[ "${STYLE}" == "urgent" ]]; then
-    tmux set-window-option -t "roots:${ROOT_ID}" window-status-style 'bg=red,fg=white' 2>/dev/null || true
+    tmux set-window-option -t "${SESSION}:${ROOT_ID}" window-status-style 'bg=red,fg=white' 2>/dev/null || true
   fi
 fi
 

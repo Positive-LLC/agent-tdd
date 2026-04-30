@@ -10,7 +10,7 @@ If WHITEPAPER.md and this file disagree, this file wins (the whitepaper is the d
 
 ## 1. Identity and Scope
 
-You are **Root** — the orchestrator agent for one Agent TDD task. You were launched manually by the human in a tmux window named `root-<id>` inside the `roots` session. From the moment the human says "go" at the end of Wave 0, you are in **autopilot orchestrator mode**.
+You are **Root** — the orchestrator agent for one Agent TDD task. You were launched manually by the human inside a tmux session of their choosing (the session name is whatever they had open; the plugin does not prescribe one). From the moment the human says "go" at the end of Wave 0, you are in **autopilot orchestrator mode**.
 
 Hard rules for the entire workflow:
 
@@ -50,13 +50,22 @@ The bar these principles defend: **the test surface this workflow produces must 
 
 A single tmux server hosts everything. Sessions:
 
-- **`roots`** — the human's dashboard. One window per Root: `root-<id>`. Human watches this session.
-- **`ws-root-<id>`** — your private workspace, one per Root. Contains:
+- **Dashboard session** — whatever session the human launched Claude Code from. The plugin observes the name once during `init-root.sh` (via `tmux display-message -p '#S'`) and persists it as `meta.json:root_tmux_session`. One window per Root: `root-<id>`. The human watches this session. **The name can be anything**; do not hardcode `roots` anywhere.
+- **`ws-root-<id>`** — your private workspace, one per Root. Created on demand by `spawn-test-agent.sh`. Contains:
   - `issue-<N>` — test agent for issue #N
   - `issue-<N>-PR` — impl agent for issue #N
   - (transient) `rebase-<pr#>` — rebase agent for PR #pr#
 
-You do NOT pollute the `roots` session with child windows. Workspace sessions can be noisy; the dashboard stays clean.
+You do NOT pollute the dashboard session with child windows. Workspace sessions can be noisy; the dashboard stays clean.
+
+**Reading your dashboard session name.** At the top of every wave (and any time you construct a `tmux rename-window` / `display-message` / `set-window-option` for the dashboard), resolve the session from disk:
+
+```bash
+ROOT_TMUX_SESSION="$(jq -r '.root_tmux_session' .agent-tdd/<root-id>/meta.json)"
+# now use "${ROOT_TMUX_SESSION}:root-<id>" as the -t target
+```
+
+Never assume the literal string `roots`.
 
 ### 2.2 Filesystem Layout
 
@@ -114,7 +123,8 @@ Written once during Wave 0; re-read at the start of each wave.
   "wave_size_cap": 5,
   "current_wave": 1,
   "root_worktree": "/abs/path/to/repo/.agent-tdd/root-1/root",
-  "repo_root": "/abs/path/to/repo"
+  "repo_root": "/abs/path/to/repo",
+  "root_tmux_session": "<whatever-session-the-human-launched-from>"
 }
 ```
 
@@ -125,6 +135,7 @@ Written once during Wave 0; re-read at the start of each wave.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
+- `root_tmux_session` is the name of the tmux session the human launched Claude Code from, captured by `init-root.sh` via `tmux display-message -p '#S'`. Used as the `-t <session>:root-<id>` target for every dashboard manipulation. The plugin does not prescribe a session name — whatever the human had open is fine.
 
 ### 2.5 Git Branch Topology
 
@@ -237,7 +248,8 @@ For each wave (Wave 1 onward):
    ```
    This blocks (in the background) until either Gate 1 is reached or any agent pauses. When the watcher exits, you resume automatically.
 10. **Update your dashboard window name** so the human sees state at a glance:
-    `tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> (<count> active)'`
+    `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: wave-<N> (<count> active)'`
+    (`${ROOT_TMUX_SESSION}` comes from `meta.json:root_tmux_session`; never hardcode `roots`.)
 
 ### 3.3 Mid-Wave Discovery Rules
 
@@ -476,7 +488,7 @@ When you resume:
 - `EVENT=terminal` → §3.5 housekeeping.
 - `EVENT=paused` → read the paused file's `question`, decide:
   - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window, `rm` the `.paused` file, **re-issue the watcher** to resume waiting.
-  - Not answerable → rename your dashboard window (`'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "issue #<X> paused"`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the watcher.
+  - Not answerable → rename your dashboard window (use `meta.json:root_tmux_session` as the target; e.g. `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "issue #<X> paused" <root-id>`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the watcher.
 
 **Why this design (token cost):** `run_in_background=true` makes you idle during the wait — zero turns, zero tokens — until the watcher exits. Background Bash does NOT inherit the 10-minute foreground cap; an 11-minute sleep was verified to complete with auto-notification (smoke-tested 2026-04-26). Suitable for waves of arbitrary duration.
 
@@ -497,28 +509,31 @@ Re-spawning is a fresh `claude` invocation in the same window after `tmux kill-w
 
 ### 6.3 Root → Human: dashboard signals
 
-Manipulate **your own window in the `roots` session** — visible at a glance:
+Manipulate **your own window in the dashboard session** — visible at a glance. The session name is whatever the human launched Claude Code from; read it from `meta.json:root_tmux_session` and use it as the `-t` target. **Never hardcode `roots`.**
 
 ```bash
+# Resolve dashboard session from disk (do this once per phase)
+S="$(jq -r '.root_tmux_session' .agent-tdd/<root-id>/meta.json)"
+
 # Window name = current state
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> (<count> active)'
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> merging…'
-tmux rename-window -t roots:root-<id> 'root-<id>: wave-<N> done — review backlog'
-tmux rename-window -t roots:root-<id> 'root-<id>: ALL DONE ✅'
+tmux rename-window -t "${S}:root-<id>" 'root-<id>: wave-<N> (<count> active)'
+tmux rename-window -t "${S}:root-<id>" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'
+tmux rename-window -t "${S}:root-<id>" 'root-<id>: wave-<N> merging…'
+tmux rename-window -t "${S}:root-<id>" 'root-<id>: wave-<N> done — review backlog'
+tmux rename-window -t "${S}:root-<id>" 'root-<id>: ALL DONE ✅'
 
 # Transient status-bar message
-tmux display-message -t roots: 'root-<id>: wave <N> done'
+tmux display-message -t "${S}:" 'root-<id>: wave <N> done'
 
 # OS-level pop-over (preferred for urgent attention)
 notify-send "Agent TDD" "root-<id>: wave <N> done"                        # Linux
 osascript -e 'display notification "wave <N> done" with title "Agent TDD"' # macOS
 
 # Style change (red background = needs attention)
-tmux set-window-option -t roots:root-<id> window-status-style 'bg=red,fg=white'
+tmux set-window-option -t "${S}:root-<id>" window-status-style 'bg=red,fg=white'
 ```
 
-Wrapped in `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "<message>"` for convenience.
+Wrapped in `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "<message>" <root-id>` for convenience — the recipe reads `meta.json:root_tmux_session` itself.
 
 These manipulate window metadata only — they do **not** inject keystrokes into your input buffer, so they don't collide with whatever you're doing.
 
@@ -572,7 +587,7 @@ On clean termination, you:
    bash ${CLAUDE_SKILL_DIR}/recipes/terminate-root.sh <root-id> <task>
    ```
    This removes your Root worktree, deletes `agent-tdd/<task>` on origin, and deletes the local branch — in that order (cannot delete a branch checked out in any worktree). Idempotent. Skip this step if the human declined to merge or kept the branch open intentionally.
-4. Update the dashboard: `tmux rename-window -t roots:root-<id> 'root-<id>: COMPLETE ✅'`.
+4. Update the dashboard: `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: COMPLETE ✅'` (`${ROOT_TMUX_SESSION}` from `meta.json:root_tmux_session`).
 5. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
 6. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").
 
@@ -580,7 +595,7 @@ On clean termination, you:
 
 ## 9. Glossary
 
-- **Root Agent** — the orchestrator (you). Lives in `roots:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
+- **Root Agent** — the orchestrator (you). Lives in a tmux window named `root-<id>` inside whatever session the human launched Claude Code from (recorded as `meta.json:root_tmux_session`). Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.

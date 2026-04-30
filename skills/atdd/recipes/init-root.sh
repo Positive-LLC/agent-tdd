@@ -54,6 +54,18 @@ log "switching gh active account to ${GH_ACCOUNT}"
 gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
   || die "failed to \`gh auth switch --user ${GH_ACCOUNT}\`"
 
+# --- capture caller's tmux session ---
+# The plugin does not prescribe a session name. Whatever session the human
+# launched Claude Code from is the "dashboard" session — we capture it once
+# here and persist it in meta.json so every subsequent `tmux rename-window`
+# / `display-message` targets the right session regardless of name.
+ROOT_TMUX_SESSION=""
+if [[ -n "${TMUX:-}" ]]; then
+  ROOT_TMUX_SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+fi
+[[ -n "${ROOT_TMUX_SESSION}" ]] || die "init-root.sh must be run from inside tmux (TMUX env var is unset or display-message failed)"
+log "captured tmux session: ${ROOT_TMUX_SESSION}"
+
 # --- repo sanity ---
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo"
 
@@ -131,7 +143,8 @@ cat > "${META}" <<EOF
   "wave_size_cap": 5,
   "current_wave": 0,
   "root_worktree": "${ROOT_WORKTREE}",
-  "repo_root": "${REPO_ROOT}"
+  "repo_root": "${REPO_ROOT}",
+  "root_tmux_session": "${ROOT_TMUX_SESSION}"
 }
 EOF
 log "wrote ${META}"

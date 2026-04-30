@@ -37,7 +37,7 @@ These are non-negotiable. Violation breaks the workflow.
 In order, before responding to the human:
 
 1. **Read the protocol:** `Read(${CLAUDE_SKILL_DIR}/PROTOCOL.md)`. This loads the canonical operational spec into your context.
-2. **Note your tmux window.** You're running inside a window in the `roots` session. Find your window name: `tmux display-message -p '#W'`. It should be `root-<id>` once `init-root.sh` runs in step 5 of Wave 0; rename if not.
+2. **Note your tmux session and window.** You're running inside a tmux window in whatever session the human had open (the plugin does not prescribe a session name — `roots`, `main`, `work`, anything is fine). Capture both: `tmux display-message -p '#S'` for the session name and `tmux display-message -p '#W'` for the current window name. The session name is persisted by `init-root.sh` as `meta.json:root_tmux_session` later in Wave 0; the window will be renamed to `root-<id>` in step 8.
 3. **Begin Wave 0** using `$ARGUMENTS` as the seed for spec discussion (see "Wave 0 behavior" below). Your Root ID is assigned by `init-root.sh` later in Wave 0 (atomic claim — race-safe under concurrent Roots in the same repo). You do NOT pre-compute it.
 
 ---
@@ -58,7 +58,7 @@ The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 5. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
 6. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
 7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, validates the gh account and switches to it, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
-8. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now: `tmux rename-window -t roots:$(tmux display-message -p '#W') 'root-<id>'`.
+8. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Also rename your tmux window now — target the current session (not a hardcoded `roots`): `tmux rename-window -t "$(tmux display-message -p '#S'):$(tmux display-message -p '#W')" 'root-<id>'`.
 9. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
 10. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
 
@@ -99,7 +99,7 @@ What lives where:
 
 | Path | Purpose |
 |---|---|
-| `meta.json` | Root config (root_id, task, base, gh_account, max_waves, wave_size_cap, current_wave, root_worktree, repo_root) |
+| `meta.json` | Root config (root_id, task, base, gh_account, max_waves, wave_size_cap, current_wave, root_worktree, repo_root, root_tmux_session) |
 | `root/` | Root's private worktree on `agent-tdd/<task>` (your cwd from Wave 0 onward) |
 | `wave-<N>/manifest.json` | Issues in this wave + expected_terminal_count |
 | `wave-<N>/status/issue-<X>.{done,failed,aborted}` | Terminal status (atomic write) |

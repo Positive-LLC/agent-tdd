@@ -33,11 +33,11 @@ date -Ins > "${LOG_DIR}/claude.timing.start"
 
 # Capture stdout and stderr to disk while keeping them visible in the pane.
 # Process substitution + tee preserves real-time visibility AND on-disk logs.
-# `--permission-mode auto` (instead of the older `--dangerously-skip-permissions`)
-# was chosen after observing inconsistent push behavior with the latter — see
-# ROADMAP.md "intermittent --dangerously-skip-permissions"; revisit if `auto`
-# also produces the same hit/miss pattern.
-claude -p "$(cat "${PROMPT_FILE}")" --permission-mode auto \
+# `--permission-mode bypassPermissions` is the canonical mode for impl agents:
+# non-interactive autonomy in a trusted local repo. The deprecated
+# `--dangerously-skip-permissions` flag and the intermediate `auto` mode were
+# both tried during smoke testing; `bypassPermissions` is the current answer.
+claude -p "$(cat "${PROMPT_FILE}")" --permission-mode bypassPermissions \
   > >(tee "${LOG_DIR}/claude.stdout") \
   2> >(tee "${LOG_DIR}/claude.stderr" >&2)
 rc=$?

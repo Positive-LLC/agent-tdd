@@ -21,6 +21,7 @@ What's in place:
 - ✅ Background-Bash event-watcher (single-shot, no timeout)
 - ✅ Auto-merge + rebase ladder up to rung 4
 - ✅ Root runs in its own worktree (`.agent-tdd/<root-id>/root/`) — multiple concurrent Roots in one repo no longer share the main worktree's HEAD/index. Root ID is claimed atomically via `mkdir`. (v0.2.0)
+- ✅ Dashboard tmux session name is observed, not prescribed. The plugin previously assumed the human launched Claude Code from a session literally named `roots`; PROTOCOL.md and several recipes hardcoded `-t roots:root-<id>` for window renames. The workflow itself worked from any session (workspace `ws-root-<id>` is created on demand), but title updates silently failed when the session was named anything else. `init-root.sh` now captures the caller's session via `tmux display-message -p '#S'` and persists it as `meta.json:root_tmux_session`; PROTOCOL.md, SKILL.md, and `notify-human.sh` read it from there. WHITEPAPER.md is unchanged (immutable v1 spec). (v0.4.0)
 
 Not yet validated end-to-end. See **Smoke-Test Risks** below for the specific things to watch when running the first real workflow.
 
