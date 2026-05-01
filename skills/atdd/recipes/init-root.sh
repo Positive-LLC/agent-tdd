@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # init-root.sh — bootstrap a Root for Agent TDD.
 #
-# Usage:  init-root.sh <root-task-slug> <base-branch> <gh-account>
+# Usage:  init-root.sh <root-task-slug> <base-branch> <gh-account> [demo]
 #
-# All three arguments are required. There is no default for <base-branch> or
-# <gh-account>: Root must explicitly ask the human in Wave 0 and pass the
+# The first three arguments are required. There is no default for <base-branch>
+# or <gh-account>: Root must explicitly ask the human in Wave 0 and pass the
 # answers through verbatim. This guards against silent assumption of `main`
 # and silent reuse of whichever GitHub account `gh` happened to have active.
+#
+# The optional 4th arg <demo> is `true` or `false` (default `false`). When
+# `true` (used by the /agent-tdd:atdd-demo skill), `meta.json:demo` is set to
+# true and `max_waves` is overridden to 1. Demo Roots otherwise run the
+# standard workflow.
 #
 # Effects:
 #   - Atomically claims the next available root-id (root-1, root-2, ...) by
@@ -31,14 +36,23 @@ log() { printf '[init-root] %s\n' "$*" >&2; }
 die() { printf '[init-root] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # --- args ---
-[[ $# -ge 3 ]] || die "usage: init-root.sh <root-task-slug> <base-branch> <gh-account> (all required; no defaults — ask the human in Wave 0)"
+[[ $# -ge 3 ]] || die "usage: init-root.sh <root-task-slug> <base-branch> <gh-account> [demo] (first three required; no defaults — ask the human in Wave 0)"
 ROOT_TASK="$1"
 BASE_BRANCH="$2"
 GH_ACCOUNT="$3"
+DEMO="${4:-false}"
 [[ -n "$BASE_BRANCH" ]] || die "base-branch must be non-empty (got: '')"
 [[ -n "$GH_ACCOUNT" ]] || die "gh-account must be non-empty (got: '')"
+[[ "$DEMO" == "true" || "$DEMO" == "false" ]] || die "demo flag must be 'true' or 'false' (got: '$DEMO')"
 
 [[ "$ROOT_TASK" =~ ^[a-z0-9-]+$ ]] || die "root-task must match ^[a-z0-9-]+$ (got: $ROOT_TASK)"
+
+# In demo mode, hard-cap max_waves to 1 so the demo definitively ends.
+MAX_WAVES=10
+if [[ "$DEMO" == "true" ]]; then
+  MAX_WAVES=1
+  log "demo mode: capping max_waves to 1"
+fi
 
 # --- validate gh account exists, then make it active ---
 # Parse `gh auth status` for "Logged in to github.com account <name>" lines.
@@ -139,12 +153,13 @@ cat > "${META}" <<EOF
   "task": "${ROOT_TASK}",
   "base": "${BASE_BRANCH}",
   "gh_account": "${GH_ACCOUNT}",
-  "max_waves": 10,
+  "max_waves": ${MAX_WAVES},
   "wave_size_cap": 5,
   "current_wave": 0,
   "root_worktree": "${ROOT_WORKTREE}",
   "repo_root": "${REPO_ROOT}",
-  "root_tmux_session": "${ROOT_TMUX_SESSION}"
+  "root_tmux_session": "${ROOT_TMUX_SESSION}",
+  "demo": ${DEMO}
 }
 EOF
 log "wrote ${META}"

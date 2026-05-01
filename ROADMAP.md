@@ -11,7 +11,7 @@ Project status, known risks, and future work for agent-tdd. The design is in [WH
 What's in place:
 
 - ✅ Plugin scaffold (`.claude-plugin/plugin.json`)
-- ✅ Single user-facing skill: `/agent-tdd:atdd`
+- ✅ User-facing skills: `/agent-tdd:atdd` (real workflow) and `/agent-tdd:atdd-demo` (canned 1-wave demo, no final merge — added v0.5.0)
 - ✅ `SKILL.md` (Root bootstrap + invariants)
 - ✅ `PROTOCOL.md` (full operational spec, re-read at every phase boundary)
 - ✅ Role markdowns for all three spawned-agent kinds (test, impl, rebase)
@@ -22,6 +22,7 @@ What's in place:
 - ✅ Auto-merge + rebase ladder up to rung 4
 - ✅ Root runs in its own worktree (`.agent-tdd/<root-id>/root/`) — multiple concurrent Roots in one repo no longer share the main worktree's HEAD/index. Root ID is claimed atomically via `mkdir`. (v0.2.0)
 - ✅ Dashboard tmux session name is observed, not prescribed. The plugin previously assumed the human launched Claude Code from a session literally named `roots`; PROTOCOL.md and several recipes hardcoded `-t roots:root-<id>` for window renames. The workflow itself worked from any session (workspace `ws-root-<id>` is created on demand), but title updates silently failed when the session was named anything else. `init-root.sh` now captures the caller's session via `tmux display-message -p '#S'` and persists it as `meta.json:root_tmux_session`; PROTOCOL.md, SKILL.md, and `notify-human.sh` read it from there. WHITEPAPER.md is unchanged (immutable v1 spec). (v0.4.0)
+- ✅ Demo entry point: `/agent-tdd:atdd-demo` runs the standard workflow against a tiny canned utility task in the repo's primary language (proposed by Root in Wave 0, in a new `demo/` file), capped at 1 wave, with the final-merge step skipped — Root prints a cleanup hint instead. Same PROTOCOL.md, recipes, and roles as `/agent-tdd:atdd`; the only durable delta is `meta.json:demo = true` written by `init-root.sh` when called with a 4th `true` arg. PROTOCOL.md is untouched: under compaction, fallthrough to the standard §8 "ask the human to merge" prompt is benign because §8 already mandates "Do not auto-merge" — worst case is one extra prompt the human declines. (v0.5.0)
 
 Not yet validated end-to-end. See **Smoke-Test Risks** below for the specific things to watch when running the first real workflow.
 

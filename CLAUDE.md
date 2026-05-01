@@ -31,7 +31,7 @@ Three properties shape every file in `skills/atdd/`:
 
 2. **The conversation is ephemeral, the disk is durable.** Root may be auto-compacted during multi-hour workflows. Every decision must be externalized to `.agent-tdd/<root-id>/` (state dir, gitignored) and to GitHub labels. SKILL.md and PROTOCOL.md both contain explicit "re-read at every phase boundary" instructions because Root cannot trust its conversation memory.
 
-3. **Single user-facing skill, human-only.** `skills/atdd/SKILL.md` has `disable-model-invocation: true` and `user-invocable: true`. The plugin has exactly one entry point (`/agent-tdd:atdd`) — never add more skills as parallel entry points; the wave-state model assumes one orchestrator per task.
+3. **One orchestrator per task; entry-point skills are human-only.** All user-invocable skills have `disable-model-invocation: true` and `user-invocable: true`. The plugin currently has two entry points: `/agent-tdd:atdd` (real workflow) and `/agent-tdd:atdd-demo` (thin wrapper that delegates to atdd's PROTOCOL.md + recipes; differs only via `meta.json:demo`). Never add a *parallel orchestrator* entry point — the wave-state model assumes one Root per task. Thin wrappers over the existing orchestrator (like `atdd-demo`) are fine when independently meaningful to invoke.
 
 ### Coordination model
 
@@ -70,6 +70,6 @@ Wave N+1 fires only after Gate 2.
 ## Common gotchas
 
 - **Don't use `find /`** or scan filesystem-wide; this is a small repo, search from `.`.
-- **Don't add a second user-facing skill** without first reading the "single user-facing skill" entry in `~/.claude/projects/-home-m6-willy-agent-tdd/memory/MEMORY.md` — the orchestrator wave model assumes one entry point per task.
+- **Don't add a *parallel orchestrator* entry point.** The wave-state model assumes one Root per task. Thin wrappers that delegate to atdd's PROTOCOL.md (the way `atdd-demo` does — see `skills/atdd-demo/SKILL.md`) are fine; new orchestrators are not. Read the "single user-facing skill" entry in `~/.claude/projects/-home-m6-willy-agent-tdd/memory/MEMORY.md` for the full reasoning before adding any user-invocable skill.
 - **Don't introduce timeouts in `wave-watcher.sh`.** It is intentionally untimed; pause-on-paused-file + terminal-count-threshold are the only exits. Adding a timeout breaks the indefinite-pause guarantee.
 - **Impl agents launch with `--permission-mode auto`**, not `--dangerously-skip-permissions`. Project-level `.claude/settings.json` `permissions.ask` rules can otherwise intercept (see ROADMAP.md "Future Work" — `git push` blocked despite bypass flag).
