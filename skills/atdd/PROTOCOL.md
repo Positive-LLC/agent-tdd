@@ -246,7 +246,7 @@ For each wave (Wave 1 onward):
    ```bash
    bash ${CLAUDE_SKILL_DIR}/recipes/wave-watcher.sh <root-id> <wave> <expected_terminal_count>
    ```
-   This blocks (in the background) until either Gate 1 is reached or any agent pauses. When the watcher exits, you resume automatically.
+   This blocks (in the background) until one of three events: Gate 1 reached, any agent pauses, **or 30-min hard ceiling hit** (no event for 30 min — the watcher detects stuck waves). When the watcher exits, you resume automatically and dispatch on the `EVENT=` line (§6.1).
 10. **Update your dashboard window name** so the human sees state at a glance:
     `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: wave-<N> (<count> active)'`
     (`${ROOT_TMUX_SESSION}` comes from `meta.json:root_tmux_session`; never hardcode `roots`.)
@@ -288,6 +288,7 @@ All `.done` PRs have been merged into the Root branch. **You** drive this autono
 - `root-<id>: wave-<N> (agent-terminal, merging…)`
 - `root-<id>: wave-<N> done`
 - `root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed`
+- `root-<id>: wave-<N> ⚠ stuck (<count> of <expected> after 30m) — human input needed`
 
 ### 3.5 Wave-to-Wave Handoff (housekeeping)
 
@@ -482,15 +483,24 @@ The watcher:
 - Polls `<status-dir>` every 10 seconds.
 - Exits with `EVENT=terminal` when the count of `.done|.failed|.aborted|.crashed` files reaches `<expected_terminal_count>`.
 - Exits with `EVENT=paused FILE=<path>` if any `.paused` file appears.
-- Has no timeout.
+- Exits with `EVENT=timeout` if no terminal/paused event fires within 30 minutes (the per-invocation hard ceiling). Also emits `TERMINAL_COUNT=<n>` and `EXPECTED=<n>` so you can describe the stuck state.
+
+The 30-min ceiling is **per watcher invocation**, not cumulative across the wave. When you re-issue the watcher after answering a paused agent, the new watcher gets a fresh 30-min budget. Partial progress (terminal files appearing without reaching threshold) does **not** reset the timer — semantics are "max 30 min between events."
 
 When you resume:
 - `EVENT=terminal` → §3.5 housekeeping.
 - `EVENT=paused` → read the paused file's `question`, decide:
   - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window, `rm` the `.paused` file, **re-issue the watcher** to resume waiting.
   - Not answerable → rename your dashboard window (use `meta.json:root_tmux_session` as the target; e.g. `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "issue #<X> paused" <root-id>`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the watcher.
+- `EVENT=timeout` → wave is stuck (no events for 30 min). **Do not loop on the watcher.** Escalate to the human per §1.5 P6 with a single recommendation:
+  1. Read the parsed `TERMINAL_COUNT` and `EXPECTED` from the watcher's stdout.
+  2. List the status dir to identify which issues are missing terminal files: `ls -la "${STATUS_DIR}"`.
+  3. For each missing issue, inspect its log bundle (`<state-dir>/wave-<N>/logs/issue-<X>/{claude.stderr,claude.exitcode,tmux.pane}`) and the tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-<X>`) to form a recommendation (most common: silently dead `claude -p` with no `.crashed` written, or interactive test agent that never wrote `.paused`).
+  4. Rename your dashboard window: `tmux rename-window -t "${ROOT_TMUX_SESSION}:root-<id>" 'root-<id>: wave-<N> ⚠ stuck (<count> of <expected> after 30m) — human input needed'` and call `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "wave <N> stuck (<count> of <expected> after 30m)" <root-id> urgent`.
+  5. Surface to the human with a single recommendation per §1.5 P6. **Do not present a menu.** Default recommendations: (a) for a likely-dead agent, "mark it `.failed` manually (`touch <status-dir>/issue-<X>.failed`) and I'll resume — confirm/correct"; (b) for unclear state, "I'll re-issue the watcher for one more 30-min budget while you investigate the log bundle — confirm/correct."
+  6. After the human responds, take the agreed action and re-issue the watcher.
 
-**Why this design (token cost):** `run_in_background=true` makes you idle during the wait — zero turns, zero tokens — until the watcher exits. Background Bash does NOT inherit the 10-minute foreground cap; an 11-minute sleep was verified to complete with auto-notification (smoke-tested 2026-04-26). Suitable for waves of arbitrary duration.
+**Why this design (token cost):** `run_in_background=true` makes you idle during the wait — zero turns, zero tokens — until the watcher exits. Background Bash does NOT inherit the 10-minute foreground cap; an 11-minute sleep was verified to complete with auto-notification (smoke-tested 2026-04-26). The 30-min ceiling is the safety net for silent agent death (impl/test agent dies without writing a terminal status file) — without it, Root waits forever on a dead wave. The ceiling fires per-invocation, not cumulative, so a normal wave with one mid-wave pause is unaffected.
 
 ### 6.2 Root → Agent: `tmux send-keys`
 
@@ -559,13 +569,13 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 | Impl CI failed post-PR | Status `.failed` with `ci_status: failing`. PR open. You may retry once after auto-rebase if conflict-induced. |
 | Impl aborted (test malformed) | Status `.aborted`, no PR. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
 | Impl crashed (silent death) | `claude -p` exited non-zero before the agent wrote its own status. The launch wrapper writes `.crashed` automatically and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{claude.stderr,claude.exitcode}` to diagnose. No automatic re-spawn. |
-| Test agent crash (silent death) | Status file missing; watcher does not advance. Dashboard window reflects "stuck" once heartbeat threshold passes. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
+| Test agent crash (silent death) | Status file missing; watcher does not advance until its 30-min hard ceiling fires (`EVENT=timeout`, §6.1). Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
 | Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` PR did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.agent-tdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
 | Rebase-blocked / rebase-regression | §3.7 escalation ladder. |
 
-**Heartbeat for stuck agents:** a wave has been running for > 30 minutes with no status file changes AND no `.paused` file. Update window: `'root-<id>: wave-<N> (stuck? <count> of <expected> after 30m)'`. Human investigates.
+**Stuck-wave hard ceiling:** the wave-watcher exits with `EVENT=timeout` after 30 minutes without any terminal or paused event (per-invocation, not cumulative — see §6.1). Root **must** escalate to the human; **never** silently re-loop the watcher. The default recommendation when the human is asked is to manually write a `.failed` status for the dead agent(s) so the wave can advance, but the recommendation is per-case (see §6.1's `EVENT=timeout` block).
 
 ---
 
@@ -636,6 +646,14 @@ On clean termination, you:
 - [ ] Try to answer from context (issue, worktree, code)
 - [ ] If yes: `tmux send-keys` answer, `rm` `.paused`, re-issue watcher
 - [ ] If no: rename window, notify human, wait, then relay
+
+**On EVENT=timeout (30-min hard ceiling, §6.1):**
+- [ ] Parse `TERMINAL_COUNT` / `EXPECTED` from the watcher's stdout
+- [ ] List `<state-dir>/wave-<N>/status/` and identify missing issue numbers
+- [ ] Inspect log bundles + `tmux capture-pane` for each missing issue
+- [ ] Rename dashboard window to `⚠ stuck (<count> of <expected> after 30m)`, call `notify-human.sh ... urgent`
+- [ ] Escalate per §1.5 P6 with a single recommendation (do **not** silently re-loop the watcher)
+- [ ] After human input: take the agreed action (typically `touch <status-dir>/issue-<X>.failed`), then re-issue the watcher
 
 **On termination:**
 - [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; set explicitly in Wave 0 — no default)

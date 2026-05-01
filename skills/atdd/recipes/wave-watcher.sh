@@ -7,10 +7,17 @@
 #   - Polls .agent-tdd/<root-id>/wave-<N>/status/ every 10 seconds.
 #   - Exits 0 with `EVENT=terminal` to stdout when terminal count >= expected.
 #   - Exits 0 with `EVENT=paused FILE=<path>` to stdout if any .paused appears.
-#   - No timeout. Designed to be invoked once per wave with run_in_background=true.
+#   - Exits 0 with `EVENT=timeout` to stdout if no terminal/paused event
+#     fires within WAVE_WATCHER_TIMEOUT_SEC (default 1800 = 30 min).
+#     Per-invocation budget: when Root re-issues the watcher after answering
+#     a paused agent, the new watcher gets a fresh budget. The ceiling is
+#     "max time between events," not cumulative wave time.
+#   - Designed to be invoked once per wave (and once per resumed wait after a
+#     pause) with run_in_background=true.
 #
-# Root issues this exactly once per wave. When it exits, Root resumes and decides
-# what to do based on the EVENT line.
+# Root issues this exactly once per wait. When it exits, Root resumes and
+# decides what to do based on the EVENT line. EVENT=timeout always means the
+# wave is incomplete and Root must escalate to the human (PROTOCOL §1.5 P6).
 
 set -uo pipefail
 
@@ -18,6 +25,10 @@ set -uo pipefail
 ROOT_ID="$1"
 WAVE="$2"
 EXPECTED="$3"
+
+# Hard ceiling per watcher invocation. Override via env var only for testing.
+TIMEOUT_SEC="${WAVE_WATCHER_TIMEOUT_SEC:-1800}"
+DEADLINE=$(( $(date +%s) + TIMEOUT_SEC ))
 
 # Recover the main repo's working tree regardless of caller's cwd. Root runs
 # in its own worktree (.agent-tdd/<root-id>/root/); --show-toplevel would
@@ -41,6 +52,13 @@ while true; do
   if [[ -n "${paused_file}" ]]; then
     echo "EVENT=paused"
     echo "FILE=${paused_file}"
+    exit 0
+  fi
+  if [[ "$(date +%s)" -ge "${DEADLINE}" ]]; then
+    echo "EVENT=timeout"
+    echo "TERMINAL_COUNT=${terminal_count}"
+    echo "EXPECTED=${EXPECTED}"
+    echo "TIMEOUT_SEC=${TIMEOUT_SEC}"
     exit 0
   fi
   sleep 10

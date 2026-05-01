@@ -35,7 +35,7 @@ Three properties shape every file in `skills/atdd/`:
 
 ### Coordination model
 
-- **Child → Root**: atomic status files (`.done`/`.failed`/`.aborted`/`.crashed`/`.paused`) under `.agent-tdd/<root-id>/wave-<N>/status/`. Root waits via a single `wave-watcher.sh` issued **once per wave with `run_in_background=true`** — this keeps Root idle (zero turns, zero tokens) until the watcher exits on terminal-threshold or first pause. Background Bash does not inherit the foreground 10-min cap.
+- **Child → Root**: atomic status files (`.done`/`.failed`/`.aborted`/`.crashed`/`.paused`) under `.agent-tdd/<root-id>/wave-<N>/status/`. Root waits via a single `wave-watcher.sh` issued **once per wait with `run_in_background=true`** — this keeps Root idle (zero turns, zero tokens) until the watcher exits on terminal-threshold, first pause, or **30-min hard ceiling** (no event for 30 min — the safety net for silently dead child agents). Background Bash does not inherit the foreground 10-min cap.
 - **Root → Child**: `tmux send-keys` into the child's window.
 - **Root → Human**: `tmux rename-window` + `notify-send`/`osascript`. Children **never** talk to the human directly.
 
@@ -53,7 +53,7 @@ Wave N+1 fires only after Gate 2.
 - `wave_size_cap` default: 5 parallel agents per wave
 - Aborted-issue retry budget: hard-coded 1 per issue per wave
 - Status-watcher poll interval: 10 s
-- Stuck-agent heartbeat threshold: 30 min
+- Wave-watcher hard ceiling: 30 min per invocation (no event for 30 min → `EVENT=timeout`, escalate to human; not cumulative across the wave). Override only via `WAVE_WATCHER_TIMEOUT_SEC` for tests.
 
 ## Editing rules specific to this repo
 
@@ -71,5 +71,5 @@ Wave N+1 fires only after Gate 2.
 
 - **Don't use `find /`** or scan filesystem-wide; this is a small repo, search from `.`.
 - **Don't add a *parallel orchestrator* entry point.** The wave-state model assumes one Root per task. Thin wrappers that delegate to atdd's PROTOCOL.md (the way `atdd-demo` does — see `skills/atdd-demo/SKILL.md`) are fine; new orchestrators are not. Read the "single user-facing skill" entry in `~/.claude/projects/-home-m6-willy-agent-tdd/memory/MEMORY.md` for the full reasoning before adding any user-invocable skill.
-- **Don't introduce timeouts in `wave-watcher.sh`.** It is intentionally untimed; pause-on-paused-file + terminal-count-threshold are the only exits. Adding a timeout breaks the indefinite-pause guarantee.
+- **`wave-watcher.sh` has a 30-min hard ceiling per invocation** (since v0.6.0). Three exits: `EVENT=terminal` (Gate 1 reached), `EVENT=paused` (any `.paused` file appeared), `EVENT=timeout` (no event for 30 min — silent agent death). On `EVENT=timeout`, Root **must** escalate to the human per §1.5 P6; **do not silently re-issue the watcher**. The ceiling is per-invocation (resets when Root re-issues after handling a pause), not cumulative — pauses don't burn budget. The earlier "indefinite-pause guarantee" was replaced because the watcher was hanging forever on dead agents (test/impl agents that crashed without writing a status file).
 - **Impl agents launch with `--permission-mode auto`**, not `--dangerously-skip-permissions`. Project-level `.claude/settings.json` `permissions.ask` rules can otherwise intercept (see ROADMAP.md "Future Work" — `git push` blocked despite bypass flag).
