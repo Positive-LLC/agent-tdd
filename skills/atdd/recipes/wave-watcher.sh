@@ -7,17 +7,21 @@
 #   - Polls .agent-tdd/<root-id>/wave-<N>/status/ every 10 seconds.
 #   - Exits 0 with `EVENT=terminal` to stdout when terminal count >= expected.
 #   - Exits 0 with `EVENT=paused FILE=<path>` to stdout if any .paused appears.
-#   - Exits 0 with `EVENT=timeout` to stdout if no terminal/paused event
-#     fires within WAVE_WATCHER_TIMEOUT_SEC (default 1800 = 30 min).
-#     Per-invocation budget: when Root re-issues the watcher after answering
-#     a paused agent, the new watcher gets a fresh budget. The ceiling is
-#     "max time between events," not cumulative wave time.
+#   - Exits 0 with `EVENT=timeout` to stdout when WAVE_WATCHER_TIMEOUT_SEC
+#     (default 1800 = 30 min) of wall-clock elapses from this invocation's
+#     start without a terminal/paused event. The deadline is set once at
+#     start and is NOT reset by activity in the worktree or pane — so the
+#     semantics are "max wall-clock per invocation," not "max time between
+#     events." Across re-issues each new invocation gets a fresh budget.
 #   - Designed to be invoked once per wave (and once per resumed wait after a
 #     pause) with run_in_background=true.
 #
 # Root issues this exactly once per wait. When it exits, Root resumes and
-# decides what to do based on the EVENT line. EVENT=timeout always means the
-# wave is incomplete and Root must escalate to the human (PROTOCOL §1.5 P6).
+# decides based on the EVENT line. On EVENT=timeout the wave has not reached
+# Gate 1 within this invocation's budget; Root inspects each non-terminal
+# issue per PROTOCOL §6.1's health checklist and either re-issues once (if
+# all signals green and this issue has not been self-extended this wave) or
+# escalates to the human (PROTOCOL §1.5 P6).
 
 set -uo pipefail
 

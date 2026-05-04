@@ -1,6 +1,6 @@
 {
 	"name": "agent-tdd",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"description": "TDD in the agent era",
 	"author": {
 		"name": "Willie Chang",
