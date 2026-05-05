@@ -142,11 +142,34 @@ The disk is your durable memory. Trust it over your conversation.
 
 ## On invocation: do this now
 
+**Branch on `$ARGUMENTS` first.**
+
+If `$ARGUMENTS` matches `^resume root-[a-z0-9-]+`, you were spawned by `/agent-tdd:atdd-compact` to take over an in-flight workflow whose prior Root was getting compacted out. **Skip the Bootstrap and Wave 0 sections entirely.** Execute the **Resume bootstrap** below. Hard invariants and the Mode protocol still apply unchanged.
+
+Otherwise (fresh start):
+
 1. Read `${CLAUDE_SKILL_DIR}/PROTOCOL.md`.
 2. Begin Wave 0 spec discussion using `$ARGUMENTS` as the seed. Your Root ID is assigned by `init-root.sh` at the end of Wave 0; the same script also captures your tmux session + window ID and renames the window. Do not pre-capture or pre-rename.
 3. (Continued in Wave 0 behavior above.)
 
 `$ARGUMENTS` is what the human typed after `/agent-tdd:atdd`. Treat it as the opening of a design conversation, not a complete spec.
+
+### Resume bootstrap (when `$ARGUMENTS` is `resume root-<id>`)
+
+A prior Root for this `<root-id>` was handed off to you by `/agent-tdd:atdd-compact`. Its conversation is gone; the durable handoff brief is on disk at `.agent-tdd/<root-id>/wave-<N>/handoff.md` and as the most recent comment on the wave's in-flight PRs/issues. The state dir is your full source of truth.
+
+Do this in order, before anything else:
+
+1. **Parse `<root-id>`** from `$ARGUMENTS` (everything after `resume `). Validate against `^root-[a-z0-9-]+$`.
+2. **Verify `.agent-tdd/<root-id>/meta.json` exists.** If not, halt and tell the human: `"Resume failed: no state dir at .agent-tdd/<root-id>/. Re-run /agent-tdd:atdd <spec> for a fresh Root."` Do not fall through to Wave 0.
+3. **Execute the Compaction defense steps** above — re-read `PROTOCOL.md`; re-read `meta.json` and the current wave's `manifest.json`; list `wave-<N>/status/`; run `gh issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>`.
+4. **Read the handoff brief** at `.agent-tdd/<root-id>/wave-<current_wave>/handoff.md`. This was written by the prior Root via `/agent-tdd:atdd-compact` and contains a "Conversation gap-fill" section with anything that was live in conversation but not on disk, plus a "Next concrete action" section pointing to the exact PROTOCOL.md step to take next. The brief is best-effort, not load-bearing — if absent or unreadable, proceed from disk state alone.
+5. **`cd` into `meta.json:root_worktree`.** Your cwd from now on is the Root worktree on `agent-tdd/<task>`. (Do **not** run `init-root.sh` — that would attempt to claim a fresh root-id.)
+6. **Print a one-line phase preamble** in your first response (per the Mode protocol). The prior Root is currently running step 5 of `/atdd-compact` and will read your captured pane to verify the handoff worked — your preamble is the signal it looks for. Cite the right `<root-id>` and wave number.
+7. **Re-issue `wave-watcher.sh`** if a wave is in-flight (any non-terminal issues remain in the manifest). The prior Root's background watcher (if it had one) is now a dangling no-op tied to a dying claude process; you need a fresh one tied to your session. Use the standard PROTOCOL §6.1 invocation.
+8. **Take the "Next concrete action"** from the handoff brief. From this moment you are in autopilot — no Wave 0, no freeform conversation with the human. The hard invariants apply unchanged.
+
+The Resume bootstrap is structurally identical to the Compaction defense flow already documented above; the only addition is reading `handoff.md` for the conversation gap-fill that the prior Root externalized for you. If you ever notice context drift later in this session, run Compaction defense again — it's the same set of steps, minus the handoff.md read (which is one-shot at resume time).
 
 ---
 

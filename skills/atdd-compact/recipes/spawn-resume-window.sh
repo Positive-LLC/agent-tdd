@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# spawn-resume-window.sh — create a new tmux window in the dashboard session,
+# launch claude in it, and send the /agent-tdd:atdd resume slash command.
+#
+# Usage:  spawn-resume-window.sh <root-id>
+#
+# Prints the new window's stable tmux ID (e.g. @12) on stdout. All progress
+# messages go to stderr. Caller (Root running /atdd-compact) captures the
+# stdout to use for capture-pane in step 5.
+#
+# Effects:
+#   - tmux new-window in the dashboard session named root-<id>-resume
+#     (suffixed -2, -3, ... if collision). cwd = repo_root.
+#   - sends `claude` + Enter to start the interactive session.
+#   - polls capture-pane until the prompt indicator appears (up to 30s).
+#   - sends `/agent-tdd:atdd resume <root-id>` + Enter.
+#
+# Failure modes:
+#   - tmux session from meta.json no longer exists → die.
+#   - claude prompt does not appear within 30s → die (window left alive for
+#     debugging; caller decides whether to kill it).
+
+set -euo pipefail
+
+log() { printf '[spawn-resume] %s\n' "$*" >&2; }
+die() { printf '[spawn-resume] ERROR: %s\n' "$*" >&2; exit 1; }
+
+[[ $# -eq 1 ]] || die "usage: $0 <root-id>"
+ROOT_ID="$1"
+[[ "$ROOT_ID" =~ ^root-[a-z0-9-]+$ ]] || die "bad root-id: ${ROOT_ID}"
+
+command -v tmux >/dev/null 2>&1 || die "tmux not found on PATH"
+command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
+
+REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
+  || die "not inside a git repo"
+META="${REPO_ROOT}/.agent-tdd/${ROOT_ID}/meta.json"
+[[ -f "$META" ]] || die "meta.json not found at ${META}"
+
+SESSION="$(jq -r '.root_tmux_session // empty' "$META")"
+[[ -n "$SESSION" ]] || die "root_tmux_session not set in ${META}"
+
+tmux has-session -t "${SESSION}" 2>/dev/null \
+  || die "tmux session '${SESSION}' does not exist (was the dashboard session killed?)"
+
+# --- pick a unique window name; resume-N suffix grows on collision ---
+BASE_NAME="${ROOT_ID}-resume"
+NAME="${BASE_NAME}"
+i=2
+# tmux list-windows -F '#W' lists all window names in the session.
+existing="$(tmux list-windows -t "${SESSION}" -F '#W' 2>/dev/null || true)"
+while echo "$existing" | grep -qx "${NAME}"; do
+  NAME="${BASE_NAME}-${i}"
+  i=$((i + 1))
+  [[ $i -gt 32 ]] && die "too many resume windows; clean up old ones first"
+done
+log "new window name: ${NAME}"
+
+# --- create the new window and capture its stable window ID ---
+# -P -F '#{window_id}' prints the new window's @-id on stdout. We avoid -d
+# (don't auto-switch focus) so the human's eyes stay on the old (current)
+# window during verification; they'll switch manually after archive.
+NEW_WIN_ID="$(tmux new-window \
+  -t "${SESSION}:" \
+  -n "${NAME}" \
+  -c "${REPO_ROOT}" \
+  -d \
+  -P -F '#{window_id}')" \
+  || die "tmux new-window failed"
+[[ -n "$NEW_WIN_ID" ]] || die "could not capture new window's #{window_id}"
+log "new window id: ${NEW_WIN_ID}"
+
+# --- launch claude in the new window ---
+# We don't pass --plugin-dir because agent-tdd is installed globally per the
+# user's setup. We don't pass --permission-mode either; the resumed Root will
+# inherit the user's default (or whatever they set) — same as a normal claude
+# launch. Spawned child agents (test/impl) launch with their own flags from
+# atdd's recipes, independent of this.
+log "launching claude in ${NEW_WIN_ID}"
+tmux send-keys -t "${NEW_WIN_ID}" 'claude' Enter
+
+# --- wait for the prompt indicator to appear ---
+# Claude Code's interactive prompt shows a `>` on its own line at the start of
+# input. Poll capture-pane up to 30s; long enough for cold starts, short
+# enough that a hung launch surfaces fast.
+log "waiting for claude prompt (up to 30s)"
+PROMPT_OK=0
+for _ in $(seq 1 30); do
+  if tmux capture-pane -p -t "${NEW_WIN_ID}" 2>/dev/null | grep -q '^>'; then
+    PROMPT_OK=1
+    break
+  fi
+  sleep 1
+done
+[[ $PROMPT_OK -eq 1 ]] || die "claude prompt did not appear within 30s in ${NEW_WIN_ID} — check the pane manually"
+
+# --- send the resume slash command ---
+SLASH="/agent-tdd:atdd resume ${ROOT_ID}"
+log "sending: ${SLASH}"
+# -l makes tmux treat the string as literal (handles the slash and spaces
+# without binding to any user-defined key sequence). Then a separate Enter.
+tmux send-keys -t "${NEW_WIN_ID}" -l "${SLASH}"
+tmux send-keys -t "${NEW_WIN_ID}" Enter
+
+# --- output: the new window id (the only stdout line) ---
+echo "${NEW_WIN_ID}"
