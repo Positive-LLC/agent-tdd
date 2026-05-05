@@ -68,17 +68,27 @@ log "switching gh active account to ${GH_ACCOUNT}"
 gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
   || die "failed to \`gh auth switch --user ${GH_ACCOUNT}\`"
 
-# --- capture caller's tmux session ---
+# --- capture caller's tmux session and window ID ---
 # The plugin does not prescribe a session name. Whatever session the human
 # launched Claude Code from is the "dashboard" session — we capture it once
-# here and persist it in meta.json so every subsequent `tmux rename-window`
-# / `display-message` targets the right session regardless of name.
+# here and persist it in meta.json.
+#
+# We also capture the window's stable tmux ID (`#{window_id}`, e.g. `@7`) and
+# persist it. This is the ONLY identifier Root targets for subsequent renames.
+# Window IDs never collide and never shift, unlike window names (which Root
+# rewrites on every status change) or window indexes (which `renumber-windows`
+# can shift). Targeting by name is a footgun because tmux's resolution order
+# tries window-index BEFORE name (man tmux: target-window), so a numeric
+# default name like "3" silently becomes "the window currently at index 3".
 ROOT_TMUX_SESSION=""
+ROOT_TMUX_WINDOW_ID=""
 if [[ -n "${TMUX:-}" ]]; then
   ROOT_TMUX_SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+  ROOT_TMUX_WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
 fi
 [[ -n "${ROOT_TMUX_SESSION}" ]] || die "init-root.sh must be run from inside tmux (TMUX env var is unset or display-message failed)"
-log "captured tmux session: ${ROOT_TMUX_SESSION}"
+[[ -n "${ROOT_TMUX_WINDOW_ID}" ]] || die "could not capture tmux window id (#{window_id})"
+log "captured tmux session: ${ROOT_TMUX_SESSION}, window id: ${ROOT_TMUX_WINDOW_ID}"
 
 # --- repo sanity ---
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo"
@@ -159,10 +169,19 @@ cat > "${META}" <<EOF
   "root_worktree": "${ROOT_WORKTREE}",
   "repo_root": "${REPO_ROOT}",
   "root_tmux_session": "${ROOT_TMUX_SESSION}",
+  "root_tmux_window_id": "${ROOT_TMUX_WINDOW_ID}",
   "demo": ${DEMO}
 }
 EOF
 log "wrote ${META}"
+
+# --- rename Root's tmux window via stable window ID ---
+# Done here (rather than left to Root in SKILL.md) so we use the just-captured
+# #{window_id} directly, never #W (which can be a numeric default name and
+# would resolve as window-INDEX per tmux's resolution order).
+log "renaming tmux window ${ROOT_TMUX_WINDOW_ID} to ${ROOT_ID}"
+tmux rename-window -t "${ROOT_TMUX_WINDOW_ID}" "${ROOT_ID}" 2>/dev/null \
+  || log "warning: failed to rename tmux window (continuing)"
 
 # --- output the root-id (stdout) ---
 echo "${ROOT_ID}"
