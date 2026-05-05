@@ -45,8 +45,8 @@ fi
 # Fall back to the caller's current session if meta.json wasn't reachable.
 # (No fallback for window ID — without it we refuse to rename rather than
 # risk targeting the wrong window.)
-if [[ -z "${SESSION}" ]] && [[ -n "${TMUX:-}" ]]; then
-  SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+if [[ -z "${SESSION}" ]] && [[ -n "${TMUX:-}" ]] && [[ -n "${TMUX_PANE:-}" ]]; then
+  SESSION="$(tmux display-message -p -t "${TMUX_PANE}" '#S' 2>/dev/null || true)"
 fi
 
 # Transient banner in the dashboard session (best-effort)

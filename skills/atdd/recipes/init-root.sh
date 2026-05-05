@@ -80,14 +80,21 @@ gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
 # can shift). Targeting by name is a footgun because tmux's resolution order
 # tries window-index BEFORE name (man tmux: target-window), so a numeric
 # default name like "3" silently becomes "the window currently at index 3".
-ROOT_TMUX_SESSION=""
-ROOT_TMUX_WINDOW_ID=""
-if [[ -n "${TMUX:-}" ]]; then
-  ROOT_TMUX_SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
-  ROOT_TMUX_WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
-fi
-[[ -n "${ROOT_TMUX_SESSION}" ]] || die "init-root.sh must be run from inside tmux (TMUX env var is unset or display-message failed)"
-[[ -n "${ROOT_TMUX_WINDOW_ID}" ]] || die "could not capture tmux window id (#{window_id})"
+#
+# Anchor `display-message` to the calling pane via `-t "${TMUX_PANE}"`. Without
+# `-t`, tmux resolves format strings against the *active pane of the attached
+# client* (i.e. whichever window the human currently has focused) — not the
+# pane the script is running in. If the human's focus drifted between launching
+# Claude Code and Root invoking init-root, we'd silently capture the wrong
+# window's #{window_id} and every subsequent rename would target a neighbor.
+# $TMUX_PANE is set by tmux for every process inside a pane (e.g. %98), is
+# stable for the pane's lifetime, and is unaffected by client focus.
+[[ -n "${TMUX:-}" ]] || die "init-root.sh must be run from inside tmux (TMUX env var is unset)"
+[[ -n "${TMUX_PANE:-}" ]] || die "init-root.sh must be run from inside a tmux pane (TMUX_PANE env var is unset)"
+ROOT_TMUX_SESSION="$(tmux display-message -p -t "${TMUX_PANE}" '#S' 2>/dev/null || true)"
+ROOT_TMUX_WINDOW_ID="$(tmux display-message -p -t "${TMUX_PANE}" '#{window_id}' 2>/dev/null || true)"
+[[ -n "${ROOT_TMUX_SESSION}" ]] || die "could not capture tmux session (#S) for pane ${TMUX_PANE}"
+[[ -n "${ROOT_TMUX_WINDOW_ID}" ]] || die "could not capture tmux window id (#{window_id}) for pane ${TMUX_PANE}"
 log "captured tmux session: ${ROOT_TMUX_SESSION}, window id: ${ROOT_TMUX_WINDOW_ID}"
 
 # --- repo sanity ---

@@ -50,7 +50,7 @@ The bar these principles defend: **the test surface this workflow produces must 
 
 A single tmux server hosts everything. Sessions:
 
-- **Dashboard session** — whatever session the human launched Claude Code from. The plugin observes the name once during `init-root.sh` (via `tmux display-message -p '#S'`) and persists it as `meta.json:root_tmux_session`. The same script also captures your window's stable tmux ID (e.g. `@7`) as `meta.json:root_tmux_window_id` and renames the window to `root-<id>`. The human watches this session. **The session name can be anything**; do not hardcode `roots` anywhere.
+- **Dashboard session** — whatever session the human launched Claude Code from. The plugin observes the name once during `init-root.sh` (via `tmux display-message -p -t "$TMUX_PANE" '#S'`, anchored to the calling pane so client focus can't taint the read) and persists it as `meta.json:root_tmux_session`. The same script also captures your window's stable tmux ID (e.g. `@7`) as `meta.json:root_tmux_window_id` and renames the window to `root-<id>`. The human watches this session. **The session name can be anything**; do not hardcode `roots` anywhere.
 - **`ws-root-<id>`** — your private workspace, one per Root. Created on demand by `spawn-test-agent.sh`. Contains:
   - `issue-<N>` — test agent for issue #N
   - `issue-<N>-PR` — impl agent for issue #N
@@ -145,8 +145,8 @@ Written once during Wave 0; re-read at the start of each wave.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
-- `root_tmux_session` is the name of the tmux session the human launched Claude Code from, captured by `init-root.sh` via `tmux display-message -p '#S'`. Used only for `tmux display-message` (the transient banner) — never as a window-rename target. The plugin does not prescribe a session name; whatever the human had open is fine.
-- `root_tmux_window_id` is the stable tmux ID of Root's window (e.g. `@7`), captured by `init-root.sh` via `tmux display-message -p '#{window_id}'`. **This is the only safe `-t` target for `rename-window` / `set-window-option`.** Window IDs never collide and never shift, unlike window names (which Root rewrites on every status change to display state) or window indexes (which `renumber-windows` can shift). Targeting by `<session>:root-<id>` is unsafe — see §2.1.
+- `root_tmux_session` is the name of the tmux session the human launched Claude Code from, captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#S'`. Used only for `tmux display-message` (the transient banner) — never as a window-rename target. The plugin does not prescribe a session name; whatever the human had open is fine.
+- `root_tmux_window_id` is the stable tmux ID of Root's window (e.g. `@7`), captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#{window_id}'`. The `-t "$TMUX_PANE"` is required: without it tmux resolves format strings against the attached client's *active* pane (the focused window), not the calling pane, so a focus drift between Claude-Code launch and `init-root.sh` invocation would silently capture a neighboring window's ID. **This is the only safe `-t` target for `rename-window` / `set-window-option`.** Window IDs never collide and never shift, unlike window names (which Root rewrites on every status change to display state) or window indexes (which `renumber-windows` can shift). Targeting by `<session>:root-<id>` is unsafe — see §2.1.
 
 ### 2.5 Git Branch Topology
 
