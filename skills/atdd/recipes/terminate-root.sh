@@ -10,6 +10,9 @@
 #   2. Deletes the integration branch agent-tdd/<task> on origin (if present).
 #   3. Deletes the integration branch locally (if present).
 #   4. Prunes dangling worktree references.
+#   5. Kills the workspace tmux session ws-root-<id> (if present). Stale child
+#      windows from terminated test/impl/rebase agents linger there until
+#      explicitly killed.
 #
 # Does NOT delete .agent-tdd/<root-id>/ itself — the audit trail (status files,
 # logs, meta.json, feedback.md) is preserved for forensics. The human can
@@ -67,5 +70,15 @@ fi
 
 # --- step 4: prune dangling worktree refs ---
 git -C "${REPO_ROOT}" worktree prune
+
+# --- step 5: kill workspace tmux session (if present) ---
+WS_SESSION="ws-${ROOT_ID}"
+if tmux has-session -t "${WS_SESSION}" 2>/dev/null; then
+  log "killing workspace tmux session ${WS_SESSION}"
+  tmux kill-session -t "${WS_SESSION}" 2>/dev/null \
+    || log "  (kill-session failed; continuing — session may have just exited)"
+else
+  log "workspace tmux session ${WS_SESSION} already absent"
+fi
 
 log "done"

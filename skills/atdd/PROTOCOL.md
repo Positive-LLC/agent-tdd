@@ -621,7 +621,7 @@ On clean termination, you:
    cd "${REPO_ROOT}"   # leave your Root worktree before it gets removed
    bash ${CLAUDE_SKILL_DIR}/recipes/terminate-root.sh <root-id> <task>
    ```
-   This removes your Root worktree, deletes `agent-tdd/<task>` on origin, and deletes the local branch — in that order (cannot delete a branch checked out in any worktree). Idempotent. Skip this step if the human declined to merge or kept the branch open intentionally.
+   This removes your Root worktree, deletes `agent-tdd/<task>` on origin, deletes the local branch — in that order (cannot delete a branch checked out in any worktree) — and kills the `ws-root-<id>` workspace tmux session. Idempotent. Skip this step if the human declined to merge or kept the branch open intentionally.
 4. Update the dashboard via the stable window ID: `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: COMPLETE ✅'` (`${ROOT_TMUX_WINDOW}` from `meta.json:root_tmux_window_id`).
 5. Notify the human: `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "Workflow complete"`.
 6. Self-close after a confirmation prompt to the human ("Anything else? (y/n)").
@@ -683,7 +683,7 @@ On clean termination, you:
 **On termination:**
 - [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; set explicitly in Wave 0 — no default)
 - [ ] Close `agent-tdd:done` issues tied to merged PRs
-- [ ] Run `terminate-root.sh <root-id> <task>` after final merge confirmed (cd out of Root worktree first; recipe removes worktree + deletes branch local+remote)
+- [ ] Run `terminate-root.sh <root-id> <task>` after final merge confirmed (cd out of Root worktree first; recipe removes worktree, deletes branch local+remote, kills `ws-root-<id>` session)
 - [ ] Final dashboard rename + notification
 - [ ] Self-close after human confirms
 
