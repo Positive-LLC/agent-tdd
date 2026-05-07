@@ -10,9 +10,9 @@
 # current name is (e.g. "root-3: wave-2 (3 active)") to
 # "[ARCHIVED] <prior-name>" and applies a dim status style.
 #
-# This is the LAST step of /agent-tdd:atdd-compact. After this runs, the
-# current claude process is still alive but no longer the live workflow
-# driver — the new resume window is.
+# This is the LAST step of /atdd-compact. After this runs, the current agent
+# process is still alive but no longer the live workflow driver — the new
+# resume window is.
 #
 # Idempotent: re-running adds another "[ARCHIVED]" prefix only if the
 # current name doesn't already start with "[ARCHIVED]".

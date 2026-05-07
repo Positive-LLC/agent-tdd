@@ -1,6 +1,6 @@
 ---
 name: atdd-compact
-description: Hand the in-flight Agent TDD workflow off to a fresh Claude session by checkpointing state to PRs/issues and spawning a new tmux window that resumes via `/agent-tdd:atdd resume root-<id>`. Use when the current Root's conversation has bloated mid-workflow but the wave isn't done.
+description: Hand the in-flight Agent TDD workflow off to a fresh agent session by checkpointing state to PRs/issues and spawning a new tmux window that resumes via `/atdd resume root-<id>`. Use when the current Root's conversation has bloated mid-workflow but the wave isn't done.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob
@@ -9,9 +9,9 @@ argument-hint: (no arguments)
 
 # Compact handoff (current-Root utility)
 
-You are the in-flight Root for some `root-<id>`. The human invoked `/agent-tdd:atdd-compact` because your conversation has grown large but the wave-based workflow is not done. Your job here is **one-shot**: externalize everything the next Root needs and spawn it in a new tmux window. After this skill runs, you become inert — the new claude session takes over as Root for the same `root-<id>`.
+You are the in-flight Root for some `root-<id>`. The human invoked `/atdd-compact` because your conversation has grown large but the wave-based workflow is not done. Your job here is **one-shot**: externalize everything the next Root needs and spawn it in a new tmux window. After this skill runs, you become inert — the new agent session takes over as Root for the same `root-<id>`.
 
-This is **not** a parallel orchestrator. The new window re-enters `/agent-tdd:atdd` in resume mode on the same `root-<id>`, reads its state dir, and continues from where you left off.
+This is **not** a parallel orchestrator. The new window re-enters `/atdd` in resume mode on the same `root-<id>`, reads its state dir, and continues from where you left off.
 
 ---
 
@@ -73,7 +73,7 @@ Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md` so the resume vocabulary is fr
 
 ## Step 2 — draft the handoff brief
 
-Read the template at `${CLAUDE_SKILL_DIR}/templates/checkpoint-comment.md`. Fill **every** section. The "Conversation gap-fill" and "Next concrete action" sections are the load-bearing ones — be specific.
+Read the template at `${CLAUDE_SKILL_DIR}/../atdd-compact/templates/checkpoint-comment.md`. Fill **every** section. The "Conversation gap-fill" and "Next concrete action" sections are the load-bearing ones — be specific.
 
 Template sections you must fill:
 
@@ -92,7 +92,7 @@ Write the filled brief to `/tmp/atdd-handoff-${ROOT_ID}-${WAVE}.md` (use the `Wr
 ## Step 3 — persist and post
 
 ```bash
-bash ${CLAUDE_SKILL_DIR}/recipes/write-checkpoint.sh "${ROOT_ID}" /tmp/atdd-handoff-${ROOT_ID}-${WAVE}.md
+bash ${CLAUDE_SKILL_DIR}/../atdd-compact/recipes/write-checkpoint.sh "${ROOT_ID}" /tmp/atdd-handoff-${ROOT_ID}-${WAVE}.md
 ```
 
 The recipe:
@@ -108,16 +108,16 @@ It prints a summary of where it posted to stderr; capture-pane that to verify.
 ## Step 4 — spawn the resume window
 
 ```bash
-NEW_WIN_ID="$(bash ${CLAUDE_SKILL_DIR}/recipes/spawn-resume-window.sh "${ROOT_ID}")"
+NEW_WIN_ID="$(bash ${CLAUDE_SKILL_DIR}/../atdd-compact/recipes/spawn-resume-window.sh "${ROOT_ID}")"
 ```
 
 The recipe:
 
 - Reads `root_tmux_session` and `repo_root` from `meta.json`.
 - Creates a new window in the dashboard session, named `${ROOT_ID}-resume` (or `-resume-2`, `-resume-3` etc. if collision), with cwd `${repo_root}`.
-- Launches `claude` in it.
+- Launches the agent CLI in it.
 - Waits up to 30s for the interactive prompt to appear.
-- Sends `/agent-tdd:atdd resume ${ROOT_ID}` + Enter via `tmux send-keys`.
+- Sends the resume slash command + Enter via `tmux send-keys` (`/atdd resume ${ROOT_ID}` under OpenCode; `/agent-tdd:atdd resume ${ROOT_ID}` under Claude Code — the recipe picks the right form from `AGENT_TDD_CLI`).
 - Prints the new window's stable window ID (e.g. `@12`) on stdout.
 
 If the recipe fails (non-zero exit), abort the handoff — do **not** proceed to step 5/6. Surface the recipe's stderr to the human.
@@ -153,7 +153,7 @@ Read the captured prose with your own eyes. **You are the only one who can judge
 - Different `root-id` than `${ROOT_ID}`.
 - Errors loading `meta.json`, missing files, or "could not find state dir".
 - Idle prompt with the slash command never sent (capture-pane shows just `>` after 60s).
-- The new window crashed (closed, or the pane shows a shell prompt instead of claude).
+- The new window crashed (closed, or the pane shows a shell prompt instead of the agent CLI).
 
 ---
 
@@ -162,7 +162,7 @@ Read the captured prose with your own eyes. **You are the only one who can judge
 **If healthy:**
 
 ```bash
-bash ${CLAUDE_SKILL_DIR}/recipes/archive-old-window.sh "${ROOT_ID}"
+bash ${CLAUDE_SKILL_DIR}/../atdd-compact/recipes/archive-old-window.sh "${ROOT_ID}"
 ```
 
 This renames your current window to `[ARCHIVED] <prior-name>` and dims its status style. Then print to the human:
@@ -193,13 +193,15 @@ Then halt — wait for the human's instruction. Don't auto-retry.
 
 ---
 
-## File map (under `${CLAUDE_SKILL_DIR}`)
+## File map (under `${CLAUDE_SKILL_DIR}/../atdd-compact/`)
 
 | Path | Purpose |
 |---|---|
 | `templates/checkpoint-comment.md` | Fill-in template for the handoff brief (step 2) |
 | `recipes/write-checkpoint.sh` | Persist brief + post comments (step 3) |
-| `recipes/spawn-resume-window.sh` | New window + claude + jump-start (step 4) |
+| `recipes/spawn-resume-window.sh` | New window + agent CLI + jump-start (step 4) |
 | `recipes/archive-old-window.sh` | Rename current window to `[ARCHIVED] …` (step 6) |
 
-The resume side of the handoff lives in `${CLAUDE_SKILL_DIR}/../atdd/SKILL.md` under "Resume mode" — the new claude session reaches it via `/agent-tdd:atdd resume root-<id>`.
+> **CLAUDE_SKILL_DIR symmetry:** Under Claude Code, `${CLAUDE_SKILL_DIR}` is the active skill's directory (here, `skills/atdd-compact/`). Under OpenCode, the plugin's `shell.env` hook pins it to `skills/atdd/` for the whole session. The `${CLAUDE_SKILL_DIR}/../atdd-compact/...` form above resolves correctly under both.
+
+The resume side of the handoff lives in `${CLAUDE_SKILL_DIR}/../atdd/SKILL.md` under "Resume mode" — the new agent session reaches it via `spawn-resume-window.sh`, which sends the right slash form for the active CLI (`/agent-tdd:atdd resume <id>` under Claude Code; `/atdd resume <id>` under OpenCode).
