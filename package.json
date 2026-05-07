@@ -1,5 +1,5 @@
 {
-  "name": "agent-tdd",
+  "name": "@positivegrid/agent-tdd",
   "version": "0.9.0",
   "description": "TDD in the agent era — wave-based human-agent workflow plugin",
   "type": "module",
@@ -23,5 +23,11 @@
     "email": "willie.chang@positivegrid.com"
   },
   "repository": "https://github.com/Positive-LLC/agent-tdd",
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.0.0"
+  }
 }
