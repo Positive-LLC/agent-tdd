@@ -1,6 +1,6 @@
 ---
 name: atdd-demo
-description: Run a short Agent TDD demo against a tiny utility task in the current repo, so the human can see the wave-based workflow end-to-end before committing to a real task. Use when the human types `/agent-tdd:atdd-demo` to evaluate or learn the plugin.
+description: Run a short Agent TDD demo against a tiny utility task in the current repo, so the human can see the wave-based workflow end-to-end before committing to a real task. Use when the human types `/atdd-demo` to evaluate or learn the plugin.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob Agent

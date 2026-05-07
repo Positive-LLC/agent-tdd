@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# launch-impl-agent.sh — wrapper that runs `claude -p` for an impl agent with
+# launch-impl-agent.sh — wrapper that runs the agent CLI for an impl agent with
 # full output capture, exit-code recording, a `.crashed` status marker on
 # silent death, and hardened tmux window cleanup.
 #
@@ -8,18 +8,23 @@
 #
 # Usage:  launch-impl-agent.sh <issue-num> <prompt-file> <log-dir> <status-dir>
 #
-# Side effects under <log-dir>/:
-#   claude.stdout         full stdout from `claude -p`
-#   claude.stderr         full stderr from `claude -p`
-#   claude.exitcode       integer exit code
-#   claude.timing.start   ISO-8601 timestamp before launch
-#   claude.timing.end     ISO-8601 timestamp after exit
+# Environment:
+#   AGENT_TDD_CLI           CLI binary (default: claude; alt: opencode)
 #
-# Side effect under <status-dir>/ (only when claude exits non-zero AND the
+# Side effects under <log-dir>/:
+#   agent.stdout         full stdout from the agent CLI
+#   agent.stderr         full stderr from the agent CLI
+#   agent.exitcode       integer exit code
+#   agent.timing.start   ISO-8601 timestamp before launch
+#   agent.timing.end     ISO-8601 timestamp after exit
+#
+# Side effect under <status-dir>/ (only when CLI exits non-zero AND the
 # agent didn't write its own terminal status):
 #   issue-<N>.crashed     JSON: {issue, outcome:"crashed", exit_code, log_dir, exit_reason}
 
-set -uo pipefail   # intentionally NOT -e: we need to read claude's exit code
+set -uo pipefail   # intentionally NOT -e: we need to read the CLI's exit code
+
+AGENT_TDD_CLI="${AGENT_TDD_CLI:-claude}"
 
 [[ $# -eq 4 ]] || { echo "usage: $0 <issue-num> <prompt-file> <log-dir> <status-dir>" >&2; exit 1; }
 ISSUE_NUM="$1"
@@ -29,21 +34,29 @@ STATUS_DIR="$4"
 
 mkdir -p "${LOG_DIR}" "${STATUS_DIR}"
 
-date -Ins > "${LOG_DIR}/claude.timing.start"
+date -Ins > "${LOG_DIR}/agent.timing.start"
+
+# Build the invocation based on AGENT_TDD_CLI. Both flags below request the
+# same posture: non-interactive autonomy in a trusted local repo (no permission
+# prompts). They have different names per CLI:
+#   - claude:   `--permission-mode bypassPermissions` (replaced the older
+#               `--dangerously-skip-permissions` and `auto` modes).
+#   - opencode: `--dangerously-skip-permissions` (current).
+if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
+  AGENT_CMD=(opencode run "$(cat "${PROMPT_FILE}")" --dangerously-skip-permissions)
+else
+  AGENT_CMD=(claude -p "$(cat "${PROMPT_FILE}")" --permission-mode bypassPermissions)
+fi
 
 # Capture stdout and stderr to disk while keeping them visible in the pane.
 # Process substitution + tee preserves real-time visibility AND on-disk logs.
-# `--permission-mode bypassPermissions` is the canonical mode for impl agents:
-# non-interactive autonomy in a trusted local repo. The deprecated
-# `--dangerously-skip-permissions` flag and the intermediate `auto` mode were
-# both tried during smoke testing; `bypassPermissions` is the current answer.
-claude -p "$(cat "${PROMPT_FILE}")" --permission-mode bypassPermissions \
-  > >(tee "${LOG_DIR}/claude.stdout") \
-  2> >(tee "${LOG_DIR}/claude.stderr" >&2)
+"${AGENT_CMD[@]}" \
+  > >(tee "${LOG_DIR}/agent.stdout") \
+  2> >(tee "${LOG_DIR}/agent.stderr" >&2)
 rc=$?
 
-date -Ins > "${LOG_DIR}/claude.timing.end"
-echo "${rc}" > "${LOG_DIR}/claude.exitcode"
+date -Ins > "${LOG_DIR}/agent.timing.end"
+echo "${rc}" > "${LOG_DIR}/agent.exitcode"
 
 # Give the tee subshells a moment to finish writing, and let the agent's own
 # atomic-status `mv` settle.
@@ -70,7 +83,7 @@ for status in done failed aborted; do
   fi
 done
 
-# Write `.crashed` ONLY when claude exited non-zero AND the agent didn't write
+# Write `.crashed` ONLY when the CLI exited non-zero AND the agent didn't write
 # a terminal status itself. The orphan-promote pass above ran first, so any
 # valid `.tmp` is already promoted to its final form by this point.
 if [[ "${rc}" -ne 0 ]] \
@@ -84,7 +97,8 @@ if [[ "${rc}" -ne 0 ]] \
   "outcome": "crashed",
   "exit_code": ${rc},
   "log_dir": "${LOG_DIR}",
-  "exit_reason": "claude -p exited ${rc} before writing terminal status; see claude.stderr"
+  "cli": "${AGENT_TDD_CLI}",
+  "exit_reason": "${AGENT_TDD_CLI} exited ${rc} before writing terminal status; see agent.stderr"
 }
 EOF
   mv "${TMP}" "${STATUS_DIR}/issue-${ISSUE_NUM}.crashed"

@@ -17,7 +17,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 7. **Atomic status writes:** write to `<name>.tmp`, then `mv` to `<name>`.
 8. **Never communicate with the human.** Pause and ask Root if you're stuck.
 9. **Never spawn another test agent.** Never spawn another impl agent. The only spawn you do is your single paired Impl Agent (recipe-driven, see §4 below).
-10. **Self-close at the end.** After spawning the Impl Agent, exit your own Claude session. The tmux window will close on its own.
+10. **Self-close at the end.** After spawning the Impl Agent, exit your own agent session. The tmux window will close on its own.
 11. **Never run `gh` calls in parallel.** Always issue `gh` invocations one at a time, waiting for each to return before starting the next. Even when calls look independent (e.g. `gh issue view` + `gh issue edit`), run them sequentially. Concurrent `gh` calls can hit rate limits, return inconsistent state, or trigger auth races.
 
 ---
@@ -125,13 +125,13 @@ bash ${PLUGIN_DIR}/recipes/spawn-impl-agent.sh \
 The recipe:
 1. Creates the impl worktree on `issue-<N>-impl` stacked off your `issue-<N>-tests`.
 2. Opens a new tmux window `${WORKSPACE_SESSION}:issue-<N>-PR` anchored at the impl worktree.
-3. Dispatches `claude -p '<role + task block>' --permission-mode bypassPermissions` via the launch wrapper (`recipes/launch-impl-agent.sh`), which captures logs and handles tmux window cleanup (fire-and-forget).
+3. Dispatches the non-interactive agent CLI with the role + task block via the launch wrapper (`recipes/launch-impl-agent.sh`), which captures logs and handles tmux window cleanup (fire-and-forget).
 
 You do not interact with the impl agent after spawning. It writes its own terminal status file when done.
 
 ### Step 8: Self-close
 
-Exit your Claude session. Send the user prompt `/exit` or simply terminate by ending your turn cleanly. The tmux window for your test agent will exit when `claude` exits.
+Exit your agent session. Send the user prompt `/exit` or simply terminate by ending your turn cleanly. The tmux window for your test agent will exit when the agent CLI exits.
 
 You do **not** write any terminal status file. The Impl Agent's status is what counts.
 

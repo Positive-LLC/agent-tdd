@@ -50,7 +50,7 @@ The bar these principles defend: **the test surface this workflow produces must 
 
 A single tmux server hosts everything. Sessions:
 
-- **Dashboard session** — whatever session the human launched Claude Code from. The plugin observes the name once during `init-root.sh` (via `tmux display-message -p -t "$TMUX_PANE" '#S'`, anchored to the calling pane so client focus can't taint the read) and persists it as `meta.json:root_tmux_session`. The same script also captures your window's stable tmux ID (e.g. `@7`) as `meta.json:root_tmux_window_id` and renames the window to `root-<id>`. The human watches this session. **The session name can be anything**; do not hardcode `roots` anywhere.
+- **Dashboard session** — whatever session the human launched the agent CLI from. The plugin observes the name once during `init-root.sh` (via `tmux display-message -p -t "$TMUX_PANE" '#S'`, anchored to the calling pane so client focus can't taint the read) and persists it as `meta.json:root_tmux_session`. The same script also captures your window's stable tmux ID (e.g. `@7`) as `meta.json:root_tmux_window_id` and renames the window to `root-<id>`. The human watches this session. **The session name can be anything**; do not hardcode `roots` anywhere.
 - **`ws-root-<id>`** — your private workspace, one per Root. Created on demand by `spawn-test-agent.sh`. Contains:
   - `issue-<N>` — test agent for issue #N
   - `issue-<N>-PR` — impl agent for issue #N
@@ -145,8 +145,8 @@ Written once during Wave 0; re-read at the start of each wave.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
-- `root_tmux_session` is the name of the tmux session the human launched Claude Code from, captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#S'`. Used only for `tmux display-message` (the transient banner) — never as a window-rename target. The plugin does not prescribe a session name; whatever the human had open is fine.
-- `root_tmux_window_id` is the stable tmux ID of Root's window (e.g. `@7`), captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#{window_id}'`. The `-t "$TMUX_PANE"` is required: without it tmux resolves format strings against the attached client's *active* pane (the focused window), not the calling pane, so a focus drift between Claude-Code launch and `init-root.sh` invocation would silently capture a neighboring window's ID. **This is the only safe `-t` target for `rename-window` / `set-window-option`.** Window IDs never collide and never shift, unlike window names (which Root rewrites on every status change to display state) or window indexes (which `renumber-windows` can shift). Targeting by `<session>:root-<id>` is unsafe — see §2.1.
+- `root_tmux_session` is the name of the tmux session the human launched the agent CLI from, captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#S'`. Used only for `tmux display-message` (the transient banner) — never as a window-rename target. The plugin does not prescribe a session name; whatever the human had open is fine.
+- `root_tmux_window_id` is the stable tmux ID of Root's window (e.g. `@7`), captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#{window_id}'`. The `-t "$TMUX_PANE"` is required: without it tmux resolves format strings against the attached client's *active* pane (the focused window), not the calling pane, so a focus drift between agent-CLI launch and `init-root.sh` invocation would silently capture a neighboring window's ID. **This is the only safe `-t` target for `rename-window` / `set-window-option`.** Window IDs never collide and never shift, unlike window names (which Root rewrites on every status change to display state) or window indexes (which `renumber-windows` can shift). Targeting by `<session>:root-<id>` is unsafe — see §2.1.
 
 ### 2.5 Git Branch Topology
 
@@ -173,7 +173,7 @@ Rules:
 
 All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 
-**Terminal (`.done`, `.failed`, `.aborted`, `.crashed`)** — `.done`/`.failed`/`.aborted` are written by impl agents themselves (and `.aborted` by test agents). `.crashed` is written by the impl-agent launch wrapper (`recipes/launch-impl-agent.sh`) when `claude -p` exits non-zero before the agent wrote any other terminal status — i.e., the agent died silently mid-task.
+**Terminal (`.done`, `.failed`, `.aborted`, `.crashed`)** — `.done`/`.failed`/`.aborted` are written by impl agents themselves (and `.aborted` by test agents). `.crashed` is written by the impl-agent launch wrapper (`recipes/launch-impl-agent.sh`) when the agent CLI exits non-zero before the agent wrote any other terminal status — i.e., the agent died silently mid-task.
 
 ```json
 {
@@ -189,7 +189,7 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 - `outcome` ∈ `{"success", "failed", "aborted", "crashed"}` (matches the file extension)
 - `ci_status` ∈ `{"passing", "failing", "no-checks", "not-applicable"}`
 - For `.aborted`: `pr_url` is null, `ci_status` is `"not-applicable"`, `exit_reason` describes the test-contract problem.
-- For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, exit_reason}`. The wrapper writes it; treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `claude.stderr`, `claude.exitcode`) to diagnose.
+- For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, exit_reason}`. The wrapper writes it; treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `agent.stderr`, `agent.exitcode`) to diagnose.
 
 **Paused (`.paused`)** — transient; written by either test or impl agents:
 
@@ -251,7 +251,7 @@ For each wave (Wave 1 onward):
 8. **Spawn one test agent per issue.** Use `${CLAUDE_SKILL_DIR}/recipes/spawn-test-agent.sh <root-id> <wave> <issue#>`. The recipe:
    - Creates the worktree under `.agent-tdd/<root-id>/worktrees/issue-<N>-tests/`.
    - Creates the tmux window in `ws-root-<id>:issue-<N>`.
-   - Launches `claude` in that window.
+   - Launches the agent CLI in that window.
    - Waits for the prompt, then `tmux send-keys` the constructed initial prompt (role markdown + per-issue task block, see §5).
 9. **Issue the background event-watcher** (one Bash call with `run_in_background=true`):
    ```bash
@@ -285,7 +285,7 @@ Every agent in the wave has reached a terminal state:
 - 🛑 `.aborted` — test contract malformed; **must be consumed by you** before counting:
   - Re-spawn the test agent once with abort feedback (resets the issue to in-flight; Gate 1 is re-evaluated when it finishes), OR
   - Escalate (second-pass abort): label the issue `agent-tdd:failed`, raise hand to human.
-- 💥 `.crashed` — impl agent died silently (claude -p exited non-zero before writing its own terminal status). Treat like `.failed`: label the issue `agent-tdd:failed`, no automatic re-spawn (the cause is unknown; could be transient API blip, internal limit, or environmental). Inspect the log bundle at `log_dir` (`claude.stderr`, `claude.exitcode`) to diagnose, then escalate to human if recurrence-prone.
+- 💥 `.crashed` — impl agent died silently (agent CLI exited non-zero before writing its own terminal status). Treat like `.failed`: label the issue `agent-tdd:failed`, no automatic re-spawn (the cause is unknown; could be transient API blip, internal limit, or environmental). Inspect the log bundle at `log_dir` (`agent.stderr`, `agent.exitcode`) to diagnose, then escalate to human if recurrence-prone.
 
 Paused agents are **not terminal**. The wave waits indefinitely for them to be resolved. This is by design — fire-and-forget allows pause gates without timing out.
 
@@ -337,7 +337,7 @@ When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
 | Rung | Conflict type | Action |
 |---|---|---|
 | 1 | Trivial (mechanical: import order, formatting, lock files) | Add a temporary worktree off the main repo: `git -C "${REPO_ROOT}" worktree add "${STATE_DIR}/rebase-pr<#>" issue-<N>-impl`. Rebase, push, re-run CI via `gh pr checks --watch`. Merge if green. Remove the temp worktree afterwards. **Do not** mutate your own Root worktree's HEAD. |
-| 2 | Non-trivial but mechanical | Spawn a one-shot **rebase agent** (`claude -p`, single session, single PR, see `${CLAUDE_SKILL_DIR}/roles/REBASE_AGENT_ROLE.md`). If green after rebase, merge. If not, escalate to rung 3. |
+| 2 | Non-trivial but mechanical | Spawn a one-shot **rebase agent** (non-interactive agent CLI, single session, single PR, see `${CLAUDE_SKILL_DIR}/roles/REBASE_AGENT_ROLE.md`). If green after rebase, merge. If not, escalate to rung 3. |
 | 3 | Semantic (e.g. two PRs implement an overlapping feature in incompatible ways) | Cannot resolve mechanically. Label PR `agent-tdd:rebase-blocked`. Name the offending PRs in the dashboard window title. Surface to the human with a **single recommendation** per §1.5 P6 — default recommendation: human resolves manually. Close-and-defer is a fallback only when the deferred PR's contribution is genuinely independent of the kept PR's quality bar. **Do not present "(a) resolve" and "(b) defer" as a menu.** |
 | 4 | Rebase regression (rebased cleanly, but CI now fails) | Label PR `agent-tdd:rebase-regression`. Escalate to human. **Do not** auto-spawn a fix agent — regressions imply the test contract may need adjustment, which is a human call. |
 
@@ -427,7 +427,7 @@ Every child agent receives a **fully self-contained prompt**: it does not have t
 
 1. Reading the role markdown (`${CLAUDE_SKILL_DIR}/roles/<ROLE>.md`).
 2. Appending a **per-issue task block** (issue number, absolute paths, branch names, expected status-file path).
-3. Sending it via `tmux send-keys` (for interactive `claude`) or as the `claude -p '<prompt>'` argument (for impl/rebase).
+3. Sending it via `tmux send-keys` (for interactive agent) or as the non-interactive `<cli> <prompt>` argument (for impl/rebase).
 
 Concretely, the role markdowns are protocol contracts — they tell the child agent what role they play, what to do, and how to write their status. The per-issue task block fills in the variables.
 
@@ -437,7 +437,7 @@ Use `${CLAUDE_SKILL_DIR}/recipes/spawn-test-agent.sh <root-id> <wave> <issue#>`.
 
 1. Creates the test worktree: `git worktree add <state-dir>/worktrees/issue-<N>-tests -b issue-<N>-tests agent-tdd/<task>`.
 2. Creates the tmux window: `tmux new-window -t ws-root-<id>: -n issue-<N> -c <worktree-path>`.
-3. Launches `claude` in that window.
+3. Launches the agent CLI in that window.
 4. Waits for the prompt with `until tmux capture-pane -p -t ws-root-<id>:issue-<N> | grep -q '^>'; do sleep 1; done`.
 5. Sends `cat ${CLAUDE_SKILL_DIR}/roles/TEST_AGENT_ROLE.md` followed by the task block (issue number, absolute status dir, etc.) via `tmux send-keys`.
 
@@ -450,15 +450,15 @@ The test agent then:
 
 ### 5.3 Impl agents
 
-Spawned by test agents (not by you directly), via fire-and-forget. The test agent invokes `recipes/spawn-impl-agent.sh`, which creates the worktree and tmux window, then dispatches `recipes/launch-impl-agent.sh` (the wrapper) into that window. The wrapper handles `claude -p` invocation, stdout/stderr capture to `<state-dir>/wave-<N>/logs/issue-<N>/`, exit-code recording, the `.crashed` marker on silent death, and hardened `tmux kill-window` cleanup.
+Spawned by test agents (not by you directly), via fire-and-forget. The test agent invokes `recipes/spawn-impl-agent.sh`, which creates the worktree and tmux window, then dispatches `recipes/launch-impl-agent.sh` (the wrapper) into that window. The wrapper handles agent CLI invocation, stdout/stderr capture to `<state-dir>/wave-<N>/logs/issue-<N>/`, exit-code recording, the `.crashed` marker on silent death, and hardened `tmux kill-window` cleanup.
 
 The impl agent:
-- Iterates within one Claude session (run tests, edit, re-run — that is normal work, not a forbidden retry).
+- Iterates within one agent session (run tests, edit, re-run — that is normal work, not a forbidden retry).
 - Applies the **effort heuristic** (in IMPL_AGENT_ROLE.md): bounded effort, three terminal outcomes.
 - Opens a PR if it has anything to ship.
 - Runs `gh pr checks --watch <pr#>` to wait for CI.
 - Writes its terminal status file atomically.
-- Exits — `tmux kill-window` runs after `claude -p` returns.
+- Exits — `tmux kill-window` runs after the agent CLI returns.
 
 ### 5.4 Rebase agents (rung 2)
 
@@ -508,18 +508,18 @@ When you resume:
   **Health checklist (per non-terminal issue X):**
   1. Parse `TERMINAL_COUNT` / `EXPECTED` from the watcher's stdout.
   2. List `<state-dir>/wave-<N>/status/` and identify which issues lack terminal files: `ls -la "${STATUS_DIR}"`.
-  3. Locate the worker for issue X: `pgrep -af "claude -p" | grep "spawn-impl-${X}\\|spawn-test-${X}"` (matches the prompt-file path that's passed to `claude -p`), or walk children of the issue's tmux pane PID. Record both the wrapper PID (`pgrep -af "launch-impl-agent.sh.*${X}"` or `pgrep -af "spawn-test-agent.sh.*${X}"`) and the worker PID.
+  3. Locate the worker for issue X: `pgrep -af "${AGENT_TDD_CLI:-claude}" | grep "spawn-impl-${X}\\|spawn-test-${X}"` (matches the prompt-file path that's passed to the agent CLI), or walk children of the issue's tmux pane PID. Record both the wrapper PID (`pgrep -af "launch-impl-agent.sh.*${X}"` or `pgrep -af "spawn-test-agent.sh.*${X}"`) and the worker PID.
   4. Evaluate **all four** signals for issue X:
-     - **Wrapper alive:** wrapper PID still in `ps`.
-     - **Worker alive:** the `claude -p` PID still in `ps`.
-     - **Worker is doing work (CPU advancing):** sample `awk '{print $14+$15}' /proc/<worker-pid>/stat` twice, 30 seconds apart. The delta must exceed **100 clock ticks** (≈ 1 CPU-second over the 30s window). A worker with zero CPU growth over 30 seconds is deadlocked even though its PID is alive — escalate. (Note: this is the universal "is it actually working" signal because impl agents run `claude -p` non-interactively; their stdout/pane often don't grow during compile, but CPU does.)
+      - **Wrapper alive:** wrapper PID still in `ps`.
+      - **Worker alive:** the agent CLI PID still in `ps`.
+      - **Worker is doing work (CPU advancing):** sample `awk '{print $14+$15}' /proc/<worker-pid>/stat` twice, 30 seconds apart. The delta must exceed **100 clock ticks** (≈ 1 CPU-second over the 30s window). A worker with zero CPU growth over 30 seconds is deadlocked even though its PID is alive — escalate. (Note: this is the universal "is it actually working" signal because impl agents run the agent CLI non-interactively; their stdout/pane often don't grow during compile, but CPU does.)
      - **No failure marker:** none of `<status-dir>/issue-${X}.{failed,aborted,crashed}` already exists (defensive — these would normally have been counted as terminal).
   5. **Verdict per issue:**
      - **All four signals green AND `<state-dir>/wave-<N>/extensions/issue-${X}` does not exist** → "really slow, not really stuck." `mkdir -p <state-dir>/wave-<N>/extensions && touch <state-dir>/wave-<N>/extensions/issue-${X}` to consume the one-time self-extension, append a one-line note to `<state-dir>/decisions.log` (e.g. `wave-<N> issue-${X}: self-extended at <ts>; CPU delta=<N> ticks/30s`), and **silently re-issue the watcher** for one more 30-min budget — no human input needed. One self-extension per issue per wave caps Root at 60 min wall-clock per issue before mandatory human escalation.
      - **Any signal red OR `extensions/issue-${X}` already exists** → escalate (steps 6–8).
 
   **Escalation (when verdict is "escalate"):**
-  6. Inspect each escalating issue's log bundle (`<state-dir>/wave-<N>/logs/issue-${X}/{claude.stderr,claude.exitcode,tmux.pane}`) and tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-${X}*`) to form your recommendation. Most common diagnoses: silently dead `claude -p` with no `.crashed` written (worker PID gone, wrapper still waiting); interactive test agent that never wrote `.paused` (worker alive, CPU near zero, prompt visible in pane); self-extension exhausted while agent is busy-looping (CPU advancing but 60+ min and still no terminal status).
+  6. Inspect each escalating issue's log bundle (`<state-dir>/wave-<N>/logs/issue-${X}/{agent.stderr,agent.exitcode,tmux.pane}`) and tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-${X}*`) to form your recommendation. Most common diagnoses: silently dead agent CLI with no `.crashed` written (worker PID gone, wrapper still waiting); interactive test agent that never wrote `.paused` (worker alive, CPU near zero, prompt visible in pane); self-extension exhausted while agent is busy-looping (CPU advancing but 60+ min and still no terminal status).
   7. Rename your dashboard window via window ID: `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⚠ stuck (<count> of <expected> after <total>m) — human input needed'` (where `<total>` is 30 or 60 depending on whether self-extension was used) and call `${CLAUDE_SKILL_DIR}/recipes/notify-human.sh "wave <N> stuck (<count> of <expected> after <total>m)" <root-id> urgent`.
   8. Surface to the human with a diagnostic table (per escalating issue: which of the four signals were red, log bundle pointers, one-line tmux pane summary) and a single recommendation per §1.5 P6. **Do not present a menu.** Default recommendations: (a) for a confirmed-dead worker PID, "mark it `.failed` manually (`touch <status-dir>/issue-${X}.failed`) and I'll resume — confirm/correct"; (b) for "self-extension exhausted, worker still alive but not terminal after 60 min," "the agent has had its full budget and is still not terminal — I recommend marking it `.failed` and inspecting the log bundle for re-spawn — confirm/correct."
   9. After the human responds, take the agreed action and re-issue the watcher.
@@ -539,7 +539,7 @@ tmux send-keys -t ws-root-<id>:issue-<N> 'Use src/auth/middleware.ts — that is
 rm <status-dir>/issue-<N>.paused
 ```
 
-Re-spawning is a fresh `claude` invocation in the same window after `tmux kill-window` + `tmux new-window`, with updated context including the abort feedback.
+Re-spawning is a fresh agent CLI invocation in the same window after `tmux kill-window` + `tmux new-window`, with updated context including the abort feedback.
 
 ### 6.3 Root → Human: dashboard signals
 
@@ -593,7 +593,7 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 | Impl gave up (tests still red after varied attempts) | PR opened with "gave up" comment. Status `.failed`. Window self-cleans. Wave continues. |
 | Impl CI failed post-PR | Status `.failed` with `ci_status: failing`. PR open. You may retry once after auto-rebase if conflict-induced. |
 | Impl aborted (test malformed) | Status `.aborted`, no PR. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
-| Impl crashed (silent death) | `claude -p` exited non-zero before the agent wrote its own status. The launch wrapper writes `.crashed` automatically and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{claude.stderr,claude.exitcode}` to diagnose. No automatic re-spawn. |
+| Impl crashed (silent death) | The agent CLI exited non-zero before the agent wrote its own status. The launch wrapper writes `.crashed` automatically and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{agent.stderr,agent.exitcode}` to diagnose. No automatic re-spawn. |
 | Test agent crash (silent death) | Status file missing; watcher does not advance until its 30-min hard ceiling fires (`EVENT=timeout`, §6.1). Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
@@ -630,18 +630,18 @@ On clean termination, you:
 
 ## 9. Glossary
 
-- **Root Agent** — the orchestrator (you). Lives in a tmux window initially named `root-<id>` (the name evolves as Root rewrites it to display state) inside whatever session the human launched Claude Code from. Both the session name and the window's stable tmux ID are recorded by `init-root.sh` as `meta.json:root_tmux_session` and `meta.json:root_tmux_window_id`; Root targets renames via the window ID, never via `<session>:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
+- **Root Agent** — the orchestrator (you). Lives in a tmux window initially named `root-<id>` (the name evolves as Root rewrites it to display state) inside whatever session the human launched the agent CLI from. Both the session name and the window's stable tmux ID are recorded by `init-root.sh` as `meta.json:root_tmux_session` and `meta.json:root_tmux_window_id`; Root targets renames via the window ID, never via `<session>:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.
 - **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed), `.crashed` (impl agent died silently before writing its own status; written by the launch wrapper). Paused is **not** terminal.
 - **Agent-terminal (Gate 1)** — every agent in the wave has reached a terminal state.
 - **Wave-merged (Gate 2)** — all `.done` PRs have been merged to the Root branch.
-- **Single-session, single-PR rule** — an impl agent runs one Claude session and produces at most one PR; iteration within the session is permitted, spawning new agents is not.
+- **Single-session, single-PR rule** — an impl agent runs one agent session and produces at most one PR; iteration within the session is permitted, spawning new agents is not.
 - **Effort heuristic** — the "don't work too hard" rule that bounds an impl agent's iteration before it terminates as `aborted` or `gave-up`. See `${CLAUDE_SKILL_DIR}/roles/IMPL_AGENT_ROLE.md`.
 - **Scope discipline** — the pre-wave check that partitions issues to minimize file-overlap conflicts (§3.6).
 - **Rebase-failure escalation** — the ladder you follow when a `.done` PR can't auto-merge cleanly (§3.7).
-- **`${CLAUDE_SKILL_DIR}`** — the absolute path of the directory containing the skill's `SKILL.md`. Use this to reference protocol files, roles, recipes, and templates regardless of your current working directory.
+- **`${CLAUDE_SKILL_DIR}`** — the absolute path of the directory containing the skill's `SKILL.md`. Use this to reference protocol files, roles, recipes, and templates regardless of your current working directory. Under Claude Code this is set automatically by the harness; under OpenCode it is set by the agent-tdd plugin's `shell.env` hook so the same references work in both tools.
 
 ---
 
@@ -675,7 +675,7 @@ On clean termination, you:
 **On EVENT=timeout (30-min hard ceiling, §6.1):**
 - [ ] Parse `TERMINAL_COUNT` / `EXPECTED` from the watcher's stdout
 - [ ] List `<state-dir>/wave-<N>/status/` and identify missing issue numbers
-- [ ] **Health checklist per missing issue:** wrapper PID alive AND worker (`claude -p`) PID alive AND worker CPU advancing over a 30s sample (`/proc/<pid>/stat` fields 14+15 delta > 100 ticks) AND no `.failed/.aborted/.crashed` exists
+- [ ] **Health checklist per missing issue:** wrapper PID alive AND worker (agent CLI) PID alive AND worker CPU advancing over a 30s sample (`/proc/<pid>/stat` fields 14+15 delta > 100 ticks) AND no `.failed/.aborted/.crashed` exists
 - [ ] **All four green AND no `<state-dir>/wave-<N>/extensions/issue-<X>` marker:** `mkdir -p extensions/ && touch extensions/issue-<X>`, log a line in `<state-dir>/decisions.log`, silently re-issue the watcher (one self-extension per issue per wave — no human input)
 - [ ] **Any signal red OR self-extension already used:** inspect log bundles + `tmux capture-pane` for the escalating issues, rename dashboard to `⚠ stuck (<count> of <expected> after <30|60>m)`, call `notify-human.sh ... urgent`, escalate per §1.5 P6 with a per-issue diagnostic table and a single recommendation
 - [ ] After human input (escalation path only): take the agreed action (typically `touch <status-dir>/issue-<X>.failed`), then re-issue the watcher

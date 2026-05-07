@@ -7,13 +7,19 @@
 #   - Creates the impl worktree at .agent-tdd/<root-id>/worktrees/issue-<N>-impl
 #     on a new branch issue-<N>-impl stacked off issue-<N>-tests.
 #   - Opens a new tmux window <workspace-session>:issue-<N>-PR.
-#   - Launches the impl agent via `launch-impl-agent.sh`, which wraps `claude -p`
+#   - Launches the impl agent via `launch-impl-agent.sh`, which wraps the agent CLI
 #     with stdout/stderr capture, exit-code recording, a `.crashed` status marker
 #     on silent death, and hardened `tmux kill-window` cleanup.
+#
+# Environment: AGENT_TDD_CLI (default: claude) — propagated explicitly into the
+# tmux send-keys command line so the new pane's shell sees it regardless of
+# whether AGENT_TDD_CLI was inherited via tmux server env.
 #
 # Fire-and-forget. The test agent self-closes after this returns.
 
 set -euo pipefail
+
+AGENT_TDD_CLI="${AGENT_TDD_CLI:-claude}"
 
 log() { printf '[spawn-impl] %s\n' "$*" >&2; }
 die() { printf '[spawn-impl] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -103,8 +109,11 @@ LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
 [[ -x "${LAUNCHER}" ]] || die "launcher not executable: ${LAUNCHER}"
 
 # tmux send-keys with -l sends the line literally; the receiving bash parses
-# and runs it. The wrapper reads $TMUX_PANE from its env (set by tmux).
-LAUNCH_CMD="bash '${LAUNCHER}' '${ISSUE_NUM}' '${PROMPT_FILE}' '${LOG_DIR}' '${STATUS_DIR}'"
+# and runs it. The wrapper reads $TMUX_PANE from its env (set by tmux). We
+# prefix AGENT_TDD_CLI so the launcher uses the correct CLI even if the new
+# pane's shell didn't inherit our env (tmux env propagation is unreliable
+# across servers and pre-existing sessions).
+LAUNCH_CMD="AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${PROMPT_FILE}' '${LOG_DIR}' '${STATUS_DIR}'"
 tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
 tmux send-keys -t "${TARGET}" Enter
 log "impl agent for issue #${ISSUE_NUM} dispatched (fire-and-forget); logs at ${LOG_DIR}"

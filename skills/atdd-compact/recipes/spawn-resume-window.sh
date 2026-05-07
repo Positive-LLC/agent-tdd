@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # spawn-resume-window.sh — create a new tmux window in the dashboard session,
-# launch claude in it, and send the /agent-tdd:atdd resume slash command.
+# launch the agent CLI in it, and send the resume slash command.
 #
 # Usage:  spawn-resume-window.sh <root-id>
+#
+# Environment: AGENT_TDD_CLI (default: claude). Selects the slash-command form
+# (`/atdd resume <id>` under opencode; `/agent-tdd:atdd resume <id>` under
+# claude) and the binary launched in the new pane.
 #
 # Prints the new window's stable tmux ID (e.g. @12) on stdout. All progress
 # messages go to stderr. Caller (Root running /atdd-compact) captures the
@@ -11,16 +15,18 @@
 # Effects:
 #   - tmux new-window in the dashboard session named root-<id>-resume
 #     (suffixed -2, -3, ... if collision). cwd = repo_root.
-#   - sends `claude` + Enter to start the interactive session.
+#   - sends the agent CLI + Enter to start the interactive session.
 #   - polls capture-pane until the prompt indicator appears (up to 30s).
-#   - sends `/agent-tdd:atdd resume <root-id>` + Enter.
+#   - sends the (CLI-appropriate) resume slash command + Enter.
 #
 # Failure modes:
 #   - tmux session from meta.json no longer exists → die.
-#   - claude prompt does not appear within 30s → die (window left alive for
+#   - agent prompt does not appear within 30s → die (window left alive for
 #     debugging; caller decides whether to kill it).
 
 set -euo pipefail
+
+AGENT_TDD_CLI="${AGENT_TDD_CLI:-claude}"
 
 log() { printf '[spawn-resume] %s\n' "$*" >&2; }
 die() { printf '[spawn-resume] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -70,20 +76,16 @@ NEW_WIN_ID="$(tmux new-window \
 [[ -n "$NEW_WIN_ID" ]] || die "could not capture new window's #{window_id}"
 log "new window id: ${NEW_WIN_ID}"
 
-# --- launch claude in the new window ---
-# We don't pass --plugin-dir because agent-tdd is installed globally per the
-# user's setup. We don't pass --permission-mode either; the resumed Root will
-# inherit the user's default (or whatever they set) — same as a normal claude
-# launch. Spawned child agents (test/impl) launch with their own flags from
-# atdd's recipes, independent of this.
-log "launching claude in ${NEW_WIN_ID}"
-tmux send-keys -t "${NEW_WIN_ID}" 'claude' Enter
+# --- launch agent CLI in the new window ---
+# Export AGENT_TDD_CLI in the new pane's env first so the resumed Root's
+# subsequent recipe spawns (spawn-test-agent, spawn-impl-agent) see the same
+# CLI choice. tmux's server-wide env is unreliable across sessions.
+log "launching ${AGENT_TDD_CLI} in ${NEW_WIN_ID}"
+tmux send-keys -t "${NEW_WIN_ID}" "export AGENT_TDD_CLI='${AGENT_TDD_CLI}'" Enter
+tmux send-keys -t "${NEW_WIN_ID}" "${AGENT_TDD_CLI}" Enter
 
 # --- wait for the prompt indicator to appear ---
-# Claude Code's interactive prompt shows a `>` on its own line at the start of
-# input. Poll capture-pane up to 30s; long enough for cold starts, short
-# enough that a hung launch surfaces fast.
-log "waiting for claude prompt (up to 30s)"
+log "waiting for ${AGENT_TDD_CLI} prompt (up to 30s)"
 PROMPT_OK=0
 for _ in $(seq 1 30); do
   if tmux capture-pane -p -t "${NEW_WIN_ID}" 2>/dev/null | grep -q '^>'; then
@@ -92,10 +94,17 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
-[[ $PROMPT_OK -eq 1 ]] || die "claude prompt did not appear within 30s in ${NEW_WIN_ID} — check the pane manually"
+[[ $PROMPT_OK -eq 1 ]] || die "${AGENT_TDD_CLI} prompt did not appear within 30s in ${NEW_WIN_ID} — check the pane manually"
 
 # --- send the resume slash command ---
-SLASH="/agent-tdd:atdd resume ${ROOT_ID}"
+# Under Claude Code, plugin commands are namespaced (`/agent-tdd:atdd`); under
+# OpenCode, the npm-shipped plugin registers them bare (`/atdd`). Pick the
+# right form so the resumed Root actually re-enters the workflow.
+if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
+  SLASH="/atdd resume ${ROOT_ID}"
+else
+  SLASH="/agent-tdd:atdd resume ${ROOT_ID}"
+fi
 log "sending: ${SLASH}"
 # -l makes tmux treat the string as literal (handles the slash and spaces
 # without binding to any user-defined key sequence). Then a separate Enter.

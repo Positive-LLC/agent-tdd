@@ -10,13 +10,17 @@
 #   - Opens a new tmux window <workspace-session>:issue-<N> anchored at the worktree.
 #   - Starts `tmux pipe-pane` writing pane output to logs/issue-<N>/tmux.pane
 #     so the interactive session is captured to disk for forensics.
-#   - Launches `claude` in that window.
+#   - Launches the agent CLI in that window.
 #   - Pastes the constructed initial prompt (TEST_AGENT_ROLE.md + per-issue task block).
 #   - Submits the prompt with Enter.
+#
+# Environment: AGENT_TDD_CLI (default: claude)
 #
 # All progress messages go to stderr. Nothing on stdout (the recipe is fire-and-forget).
 
 set -euo pipefail
+
+AGENT_TDD_CLI="${AGENT_TDD_CLI:-claude}"
 
 log() { printf '[spawn-test] %s\n' "$*" >&2; }
 die() { printf '[spawn-test] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -71,7 +75,7 @@ fi
 log "opening tmux window ${TARGET} at ${WORKTREE_DIR}"
 tmux new-window -t "${WORKSPACE_SESSION}:" -n "${WINDOW}" -c "${WORKTREE_DIR}"
 
-# --- start pane capture before launching claude ---
+# --- start pane capture before launching agent CLI ---
 # Test agents are interactive; pane scrollback is volatile and lost on
 # `tmux kill-window`. Pipe-pane snapshots everything to disk in real time.
 LOG_DIR="${STATE_DIR}/wave-${WAVE}/logs/issue-${ISSUE_NUM}"
@@ -79,11 +83,11 @@ mkdir -p "${LOG_DIR}"
 tmux pipe-pane -t "${TARGET}" "cat >> '${LOG_DIR}/tmux.pane'"
 log "capturing pane to ${LOG_DIR}/tmux.pane"
 
-# --- launch claude ---
-tmux send-keys -t "${TARGET}" 'claude' Enter
+# --- launch agent CLI ---
+tmux send-keys -t "${TARGET}" "${AGENT_TDD_CLI}" Enter
 
-# Wait for the claude prompt (matched by '> ' or similar).
-log "waiting for claude prompt in ${TARGET}"
+# Wait for the prompt (matched by '> ' or similar).
+log "waiting for ${AGENT_TDD_CLI} prompt in ${TARGET}"
 for _ in $(seq 1 60); do
   if tmux capture-pane -p -t "${TARGET}" 2>/dev/null | tail -5 | grep -qE '^[> ]'; then
     break
@@ -119,7 +123,7 @@ log "wrote prompt to ${PROMPT_FILE}"
 # --- paste it via tmux buffer ---
 BUF="atdd-spawn-test-${ISSUE_NUM}"
 tmux load-buffer -b "${BUF}" "${PROMPT_FILE}"
-# bracketed paste keeps Claude Code from treating each newline as a submit.
+# bracketed paste keeps the agent CLI from treating each newline as a submit.
 tmux paste-buffer -p -t "${TARGET}" -b "${BUF}"
 tmux delete-buffer -b "${BUF}" 2>/dev/null || true
 

@@ -9,7 +9,7 @@
 # and silent reuse of whichever GitHub account `gh` happened to have active.
 #
 # The optional 4th arg <demo> is `true` or `false` (default `false`). When
-# `true` (used by the /agent-tdd:atdd-demo skill), `meta.json:demo` is set to
+# `true` (used by the /atdd-demo skill), `meta.json:demo` is set to
 # true and `max_waves` is overridden to 1. Demo Roots otherwise run the
 # standard workflow.
 #
@@ -70,7 +70,7 @@ gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
 
 # --- capture caller's tmux session and window ID ---
 # The plugin does not prescribe a session name. Whatever session the human
-# launched Claude Code from is the "dashboard" session — we capture it once
+# launched the agent CLI from is the "dashboard" session — we capture it once
 # here and persist it in meta.json.
 #
 # We also capture the window's stable tmux ID (`#{window_id}`, e.g. `@7`) and
@@ -85,7 +85,7 @@ gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
 # `-t`, tmux resolves format strings against the *active pane of the attached
 # client* (i.e. whichever window the human currently has focused) — not the
 # pane the script is running in. If the human's focus drifted between launching
-# Claude Code and Root invoking init-root, we'd silently capture the wrong
+# the agent CLI and Root invoking init-root, we'd silently capture the wrong
 # window's #{window_id} and every subsequent rename would target a neighbor.
 # $TMUX_PANE is set by tmux for every process inside a pane (e.g. %98), is
 # stable for the pane's lifetime, and is unaffected by client focus.
