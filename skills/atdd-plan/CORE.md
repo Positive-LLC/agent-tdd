@@ -282,9 +282,10 @@ number or `node_id`. Use `gh api -F sub_issue_id=<id>` — `-f` sends a string a
 
 - A SubIssue is **ready** when its spec + plan are complete and the human has agreed on the
   parent RootIssue's Input/Output. Mark it `atdd:ready` via `ready-mark.sh`.
-- Handoff is **manual and per SubIssue**: the human runs `/atdd` pointed at one ready
-  SubIssue. `/atdd` (after the follow-on in `Positive-LLC/agent-tdd#1`) fetches the full
-  RootIssue body (context) **plus** that SubIssue body (work) as its Wave-0 seed.
+- Handoff is **manual and per SubIssue**: the human runs
+  `/agent-tdd:atdd-from-issue <owner/repo> <#>` pointed at one ready SubIssue. That
+  wrapper fetches the full RootIssue body (context) **plus** that SubIssue body (work),
+  then delegates to `/atdd` with the union as the Wave-0 seed (no freeform spec discussion).
 - You do not sequence SubIssues for the human. Root-level topology already tells the human
   which heads are unblocked; within an unblocked head, any SubIssue can be picked first.
 

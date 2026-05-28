@@ -1,9 +1,13 @@
 # Agent TDD: A Wave-Based Workflow for Human-Agent Co-Authored Tests
 
-**Version:** v1
+**Version:** v2 (plugin v0.10.0)
 **Audience:** Engineers implementing the workflow
 
 > Project status, v1 deferrals, and known risks are tracked in [ROADMAP.md](ROADMAP.md).
+>
+> **v2 changelog (0.10.0):** Adds a Notes Agent planning layer upstream of
+> the Root Agent. The Root Agent design described in §1–§9 is **unchanged**.
+> See §1.5 (Layer architecture) and §10 (Notes Agent layer) for the addition.
 
 ---
 
@@ -17,6 +21,23 @@ Two principles anchor the design:
 2. **Contract-first batch generation, not iterative TDD.** Agent TDD is *not* classical red-green-refactor. Each (test, impl) pair runs once: tests are committed, an implementation attempt is made, and the result is a PR (success or "gave up"). Refactor moves to PR review (handled by Root, escalated to human only when needed). Iteration happens at the *wave* level, not within a pair.
 
 The Root Agent runs in **autopilot mode**: it spawns child agents, reviews their output, reroutes work, and re-spawns when needed. The human only ever talks to the Root Agent; child agents communicate exclusively with their Root.
+
+---
+
+## 1.5 Layer architecture (v0.10.0+)
+
+Agent TDD is two layers, each with a single human-facing surface:
+
+1. **Notes Agent** — `/agent-tdd:fix` today (and, later, `/agent-tdd:feature`). The **planning** layer. Investigates privately across one or more repositories, maintains a per-project NotebookIssue, and emits well-specced GitHub artifacts: RootIssues (concept-level "heads", in a designated home repo) + SubIssues (per-repo work units, native sub-issues of their RootIssue) inside a single GitHubProject board. Never writes product code. Operations contract: `skills/atdd-plan/CORE.md`. Design rationale: §10 below.
+
+2. **Root Agent** — `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue <owner/repo> <#>` (consume a planned SubIssue), plus the demo/compact wrappers. The **execution** layer — the wave-based orchestrator described in §1–§9. **Unchanged in v0.10.0**; only its input pipeline grew a new entry point that pre-fills `$ARGUMENTS` from a SubIssue. Operations contract: `skills/atdd/PROTOCOL.md`.
+
+The two layers communicate **only via GitHub** — there is no IPC, no shared filesystem, no plugin-internal API. From the Root Agent's perspective, a SubIssue body looks identical to free-form `$ARGUMENTS`; the Root Agent does not know whether the upstream was a human or the Notes Agent.
+
+Pick the entry point that matches the situation:
+
+- One-shot spec describable inline → `/agent-tdd:atdd "<spec>"`.
+- Multi-repo bug fix that wants a planned head with cross-repo topology → `/agent-tdd:fix "<bug description>"`, then `/agent-tdd:atdd-from-issue <owner/repo> <#>` for each `atdd:ready` SubIssue.
 
 ---
 
@@ -525,6 +546,53 @@ A 3-wave workflow costs roughly **~40 turns of orchestration** plus the agent se
 
 ---
 
+## 10. The Notes Agent Layer (v0.10.0+)
+
+v0.10.0 introduces a second human-facing agent above the Root Agent: the **Notes Agent** (`/agent-tdd:fix`). The Root Agent design in §1–§9 is unchanged. This section is the design rationale for the new upstream layer; its runtime contract lives in `skills/atdd-plan/CORE.md`.
+
+### 10.1 What it solves
+
+In a multi-repo system (e.g. an ERP composed of several services), preparing a sharp spec for `/atdd` is itself a long human-agent dialogue. The human spends disproportionate time reading the agent's investigation notes when all they actually need to sign off on is **Input/Output** and **any major architecture change** the work would force.
+
+The Notes Agent moves that investigation out of the conversation. It investigates privately (logged into a per-project GitHub issue — the NotebookIssue), surfaces only the minimum the human needs to decide, and emits well-specced GitHub artifacts for `/atdd` to consume.
+
+### 10.2 Design principles
+
+1. **Result-driven dialogue.** The Notes Agent surfaces to the human ONLY three kinds of thing: (a) the **Input → Output** of the active head, (b) any **major infrastructure / architecture change** the work would force, (c) which single head is currently active. Everything else — trace, dead ends, full topology — goes to the NotebookIssue. This is what reclaims the human's time. No process narration, no praise, no emotion; machinery.
+
+2. **Externalize before you speak.** Every detail and decision lives in GitHub before the agent relies on it. A multi-hour planning session will be compacted; GitHub is the only durable memory. The choice to make the notebook a GitHub Issue (not a local file) follows from this — it must survive compaction and be reachable from any machine.
+
+3. **Native GitHub only.** Use native sub-issues (parent/child) and native issue dependencies ("blocked by"). Do not invent custom Project fields or a side-channel topology mechanism. Cross-repo sub-issues are verified working (2026-05-28, against `Positive-LLC/pg-agent-erp` ↔ `Positive-LLC/erp-b2b-otc`).
+
+### 10.3 Three artifact kinds
+
+| Artifact | Where | Audience | Purpose |
+|---|---|---|---|
+| **NotebookIssue** | home repo | Notes Agent only (private) | Working memory + topology index. Body = topology index (small, stable cached projection of live state). One comment per head, addressed by an HTML marker, holds that head's detailed notes — keeps each within the 65k single-comment cap. |
+| **RootIssue** (a "head") | home repo | Notes Agent + human + `/atdd` | Distilled Input/Output + shared context that every SubIssue under it needs. The unit of human discussion (one head at a time) and the unit of root-level topology. |
+| **SubIssue** | target repo (per-repo) | Notes Agent + human + `/atdd` | Per-repo work unit, linked as a **native sub-issue** of its RootIssue. The unit `/atdd` consumes — its body is the Wave-0 seed. |
+
+The strictly separated audiences are what enables the result-driven goal: investigation accumulates in the notebook (the human is not expected to read it), while the human only sees distilled heads.
+
+### 10.4 Topology
+
+- **Dependencies live only between RootIssues**, never between SubIssues.
+- **SubIssues of one RootIssue are strictly parallel-safe.** If an ordering dependency would emerge between two SubIssues, the rule is to **split the RootIssue in two** and put the dependency at the root level — not to encode intra-root order. This is what guarantees that any SubIssue of a "ready" head can be picked first.
+- The graph is a DAG. Cycle prevention is enforced **at write time** by the `root-depend.sh` recipe (rejects self-loops, would-be cycles, and edges between non-RootIssues or across GitHubProjects). The Notes Agent never has to "validate" the graph after the fact — it is structurally clean by construction.
+- The Notes Agent **never computes the graph in its head**. The `topology-*.sh` recipes (next-urgent / available / blocking / blocked-by) are the single source of truth. Pushing graph logic out of the LLM is what makes prioritization deterministic and saves tokens.
+
+### 10.5 Handoff to the Root Agent
+
+GitHub, end-to-end. The human runs `/agent-tdd:atdd-from-issue <owner/repo> <#>` pointed at a `atdd:ready` SubIssue. The wrapper fetches the SubIssue body + the parent RootIssue body and delegates to `/atdd` with that union as the Wave-0 seed, skipping freeform spec discussion. From the Root Agent's perspective, no API changes — only a new entry point that pre-fills `$ARGUMENTS`.
+
+Original `/atdd` (free-form `$ARGUMENTS`) keeps working unchanged for tasks the human prefers to spec inline rather than via the Notes Agent.
+
+### 10.6 Completion semantics
+
+A SubIssue closes when its `/atdd` run merges. A **RootIssue** is complete only when **all its SubIssues are closed** (the "join"). The Notes Agent — not `/atdd`, not automatic — closes the RootIssue, together with the human in a short review. The human stays in the loop at the head level only.
+
+---
+
 ## Appendix A: Concrete Command Recipes
 
 ### Initialize a Root
@@ -651,3 +719,7 @@ git worktree remove --force .agent-tdd/root-1/worktrees/issue-3-impl
 - **Effort heuristic** — the "don't work too hard" rule that bounds an impl agent's iteration before it terminates as `aborted` or `gave-up` (see §2).
 - **Scope discipline** — the pre-wave check that partitions issues to minimize file-overlap conflicts.
 - **Rebase-failure escalation** — the ladder Root follows when a `.done` PR can't auto-merge cleanly (§4.7).
+- **Notes Agent** — the planning agent added in v0.10.0. Entry: `/agent-tdd:fix` (and, later, `/agent-tdd:feature`). Upstream of the Root Agent. See §1.5, §10, and `skills/atdd-plan/CORE.md`.
+- **NotebookIssue, RootIssue, SubIssue** — the three artifact kinds the Notes Agent produces; see §10.3.
+- **GitHubProject** — the shared Projects-v2 board on which the Notes Agent aggregates RootIssues and SubIssues across the system's repos.
+- **`/agent-tdd:atdd-from-issue`** — thin Root Agent entry point that pre-fills `$ARGUMENTS` from a planned SubIssue + its parent RootIssue body, then delegates to `/atdd` skipping freeform spec discussion.
