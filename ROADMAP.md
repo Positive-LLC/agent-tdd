@@ -79,6 +79,24 @@ Three implementation choices that look correct on paper but haven't been exercis
 
 ---
 
+### 4. Notes Agent CRUD recipes — live GitHub API unverified (v0.10.0+)
+
+**Where:** `skills/atdd-plan/recipes/{sub-adopt,issue-edit,issue-close,sub-unlink,root-undepend,ready-unmark}.sh`.
+
+**What we did:** Added full CRUD over RootIssues/SubIssues. `tests/run.sh` covers arg-validation, which endpoint each recipe fires, and idempotency skips — all against a **mock `gh`**. The mock proves the recipes' *logic*, not GitHub's *behaviour*.
+
+**Risk — three live-API assumptions the mock cannot check:**
+
+- **Sub-issue remove endpoint.** `sub-unlink.sh` calls `DELETE /repos/<o>/<r>/issues/<N>/sub_issue` (singular path) with `-F sub_issue_id=<db-id>`. Path/verb taken from GitHub docs; the *add* side (`sub_issues`, plural) is verified working (CORE §7, 2026-05-28) but the *remove* side has not been run against a real repo.
+- **Dependency remove endpoint.** `root-undepend.sh` calls `DELETE /repos/<o>/<r>/issues/<N>/dependencies/blocked_by/<issue_id>` (blocker db-id in the path, no body) and lists `GET .../dependencies/blocked_by` for its idempotency check. Both unverified live; if the GET list endpoint differs, the idempotency guard silently degrades (it would attempt the DELETE regardless — still correct, just not a clean no-op).
+- **`gh project item-add` idempotency.** `sub-adopt.sh` assumes re-adding an already-present item exits 0 (server-side dedup). If gh instead errors on duplicate, a re-run of `sub-adopt.sh` after a partial success will `die` at the project step. If smoke testing shows this, guard it with a membership pre-check or tolerate the duplicate-error path.
+
+**How to test (low cost, reversible):** in a throwaway repo with a real manifest — adopt a loose issue, unlink it, re-adopt (idempotency), add+remove a root dependency, mark+unmark ready, close+reopen. All operations are reversible.
+
+**If broken:** correct the endpoint path/verb in the one affected recipe; the mock tests pin the *call shape*, so update the matching fixture/assertion in `tests/run.sh` alongside.
+
+---
+
 ## v1 Deferrals
 
 These were considered during design and deliberately deferred. Source: WHITEPAPER §10.

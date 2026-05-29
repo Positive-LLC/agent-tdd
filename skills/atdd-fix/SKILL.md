@@ -80,4 +80,6 @@ Follow CORE.md §2 immediately:
   recipes.
 - **The handoff is manual.** Once a SubIssue is fully specced and labelled
   `atdd:ready` (via `ready-mark.sh`), tell the human its ref. They will run
-  `/atdd <ref>` themselves.
+  `/agent-tdd:atdd-from-issue <ref>` themselves in a fresh Claude Code
+  window. (Plain `/atdd <ref>` would treat the ref as free-text spec and
+  never fetch the issue — use `atdd-from-issue`.)

@@ -43,9 +43,10 @@ while :; do
   COUNT="$(jq 'length' <<<"$PAGE_JSON")"
   [[ "$COUNT" -gt 0 ]] || { log "marker not found in any comment"; exit 0; }
 
+  # First *comment* whose body starts with the marker — not the first *line*.
+  # (head -n 1 would keep only the marker line, which awk then strips to "".)
   BODY="$(jq -r --arg m "$MARKER" \
-    '.[] | select(.body | startswith($m)) | .body' <<<"$PAGE_JSON" \
-    | head -n 1)"
+    'first(.[] | select(.body | startswith($m)) | .body) // empty' <<<"$PAGE_JSON")"
   if [[ -n "$BODY" ]]; then
     # Strip the marker line + the immediately following blank line, if any.
     awk -v m="$MARKER" '

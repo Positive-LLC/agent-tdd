@@ -251,8 +251,14 @@ stderr, return value to stdout (JSON where structured).
 | `notebook-head-get.sh <root-ref>` | Read that head's comment body. Empty if none. |
 | `root-create.sh <title> <body-file>` | Create a RootIssue in the home repo with label `atdd:root` and add to GitHubProject. Prints `<owner>/<repo>#<N>`. |
 | `sub-create.sh <target-repo> <root-ref> <title> <body-file>` | Create a SubIssue in `<target-repo>` (e.g. `Positive-LLC/erp-b2b-otc`) with label `atdd:sub`, add to GitHubProject, and link as native sub-issue of the RootIssue. Prints `<owner>/<repo>#<N>`. |
+| `sub-adopt.sh <target-repo> <existing-issue#> <root-ref>` | **Adopt an existing ("loose") issue** as a SubIssue: label `atdd:sub`, link as native sub-issue, add to project — without creating a new issue. Idempotent. Use this when planning starts from issues someone already filed. Prints `<owner>/<repo>#<N>`. |
+| `sub-unlink.sh <sub-ref> <root-ref>` | Detach a SubIssue from its parent RootIssue (removes the native sub-issue link only; does not close or relabel). Idempotent. Pair with `sub-adopt.sh` to re-parent. |
 | `root-depend.sh <blocked-root#> <blocking-root#>` | Add a native `blocked by` edge. Enforces three invariants — see below. |
+| `root-undepend.sh <blocked-root#> <blocking-root#>` | Remove a `blocked by` edge (inverse of `root-depend.sh`). Removing an edge cannot create a cycle, so it keeps the lighter guards (both ends RootIssues; edge must exist). Idempotent. |
 | `ready-mark.sh <sub-ref>` | Label a SubIssue `atdd:ready`. |
+| `ready-unmark.sh <sub-ref>` | Remove `atdd:ready` from a SubIssue (inverse of `ready-mark.sh`) — pull it back from handoff when its spec needs more work. Idempotent. |
+| `issue-edit.sh <ref> [--title <t>] [--body-file <f\|->]` | Edit the title and/or body of any atdd-managed issue (RootIssue **or** SubIssue). Refuses issues carrying neither `atdd:root` nor `atdd:sub`. |
+| `issue-close.sh <ref> [--reopen] [--reason <completed\|not_planned>]` | Close (or `--reopen`) an atdd-managed issue. In this workflow issues are never hard-deleted — close/reopen is the lifecycle "delete". Idempotent. See §9 for *when* to close a RootIssue. |
 | `topology-next-urgent.sh` | Emit the single most-urgent open RootIssue (or empty array). Ranking: transitive blocking-count DESC, then `created_at` ASC. Project-scoped. |
 | `topology-available.sh` | Emit every open RootIssue whose blockers are all closed (transitively unblocked). Same ranking. |
 | `topology-blocking.sh <root#>` | Emit RootIssues that depend on this one (downstream). |
@@ -275,6 +281,35 @@ emits an array of length 0 or 1.
 `POST /repos/<owner>/<repo>/issues/<N>/sub_issues` with
 `{"sub_issue_id": <integer>}`. `sub_issue_id` is the child's **database `id`**, not its
 number or `node_id`. Use `gh api -F sub_issue_id=<id>` — `-f` sends a string and is rejected.
+The **remove** endpoints (used by `sub-unlink.sh` / `root-undepend.sh`):
+- Unlink sub-issue: `DELETE /repos/<owner>/<repo>/issues/<N>/sub_issue` (path is **singular**
+  `sub_issue`, vs the plural `sub_issues` for list/add), body `{"sub_issue_id": <integer>}`.
+- Remove dependency: `DELETE /repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by/<issue_id>`
+  (blocker's database `id` in the **path**, no body).
+
+### 7.1 CRUD coverage
+
+The recipes above give the Notes Agent full CRUD over both entities:
+
+| | RootIssue | SubIssue |
+|---|---|---|
+| **Create** | `root-create.sh` | `sub-create.sh` (new) · `sub-adopt.sh` (existing) |
+| **Read** | `_graph.sh`, `topology-*.sh`, `gh issue view` | same |
+| **Update** | `issue-edit.sh`, `root-depend.sh` / `root-undepend.sh` | `issue-edit.sh`, `ready-mark.sh` / `ready-unmark.sh`, `sub-unlink.sh` (re-parent) |
+| **Delete** (= close lifecycle) | `issue-close.sh` | `issue-close.sh` · `sub-unlink.sh` (drop link) |
+
+Reads have no dedicated recipe — the topology queries plus `gh issue view` already cover them.
+Every mutating recipe is **idempotent**: re-running after a partial failure converges, never
+double-applies.
+
+### 7.2 Tests
+
+`${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/tests/run.sh` runs `bash -n` over every recipe plus
+behavioural tests against a **mock `gh`** (records calls, returns fixture JSON) in a throwaway
+git repo — no live GitHub needed. Run it after touching any recipe:
+`bash skills/atdd-plan/recipes/tests/run.sh`. The mock asserts which endpoints fire and that
+idempotent re-runs skip already-done work; it does **not** verify live API behaviour (see
+ROADMAP smoke-test risks for what still needs a real-repo run).
 
 ---
 
@@ -293,10 +328,11 @@ number or `node_id`. Use `gh api -F sub_issue_id=<id>` — `-f` sends a string a
 
 ## 9. Completion semantics
 
-- A SubIssue closes when its `/atdd` run merges and the work is done.
+- A SubIssue closes when its `/atdd` run merges and the work is done (`issue-close.sh <sub-ref>`).
 - A **RootIssue is complete only when all of its SubIssues are closed** (the "join").
-- **The Notes Agent closes the RootIssue**, together with the human in a short review — not
-  `/atdd`, not automatically.
+- **The Notes Agent closes the RootIssue** (`issue-close.sh <root-ref>`), together with the
+  human in a short review — not `/atdd`, not automatically. Use `--reason not_planned` when
+  abandoning rather than completing a head.
 - After closing, re-run `notebook-index-update.sh` so the index reflects the new state.
 
 ---

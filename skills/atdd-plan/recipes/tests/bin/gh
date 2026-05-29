@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Mock `gh` for recipe tests. NOT a general gh emulator — it covers exactly the
+# call shapes the atdd-plan recipes make.
+#
+# Behavior:
+#   - Every invocation is appended (one line, space-joined argv) to $GH_LOG so
+#     tests can assert which endpoints were hit.
+#   - `gh api <endpoint>` responses are resolved in this order:
+#       1. fixture file  $MOCK_FIXTURES/<slug>.fail  -> exit 1 (simulate API error)
+#       2. fixture file  $MOCK_FIXTURES/<slug>.json  -> printed as the response
+#       3. a built-in default keyed by the endpoint shape
+#     where <slug> = "<METHOD>__<endpoint with / : ? & = turned into _>".
+#     `-q/--jq <expr>` is applied to the chosen response, mimicking gh.
+#   - Any other subcommand (issue/project/...) just logs and exits 0, unless
+#     $MOCK_FAIL_GLOB is set and matches the whole argv (then exit 1).
+set -uo pipefail
+
+: "${GH_LOG:?GH_LOG must be set}"
+printf '%s\n' "$*" >> "$GH_LOG"
+
+if [[ -n "${MOCK_FAIL_GLOB:-}" && "$*" == ${MOCK_FAIL_GLOB} ]]; then
+  echo "mock gh: forced failure for: $*" >&2
+  exit 1
+fi
+
+slug() { printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____'; }
+
+if [[ "${1:-}" != "api" ]]; then
+  # issue / project / label mutations etc. — success, already logged.
+  exit 0
+fi
+
+shift
+method="GET"; endpoint=""; qexpr=""
+rest=("$@"); n=${#rest[@]}; i=0
+while (( i < n )); do
+  a="${rest[$i]}"
+  case "$a" in
+    -X|--method)            method="${rest[$((i+1))]}"; i=$((i+2));;
+    -q|--jq)                qexpr="${rest[$((i+1))]}";  i=$((i+2));;
+    -f|-F|--field|--raw-field|-H|--header) i=$((i+2));;
+    graphql)                [[ -z "$endpoint" ]] && endpoint="graphql"; i=$((i+1));;
+    -*)                     i=$((i+1));;
+    *)                      [[ -z "$endpoint" ]] && endpoint="$a"; i=$((i+1));;
+  esac
+done
+
+base="${MOCK_FIXTURES:-}/$(slug "$method" "$endpoint")"
+if [[ -n "${MOCK_FIXTURES:-}" && -f "${base}.fail" ]]; then
+  echo "mock gh: fixture-forced failure ${method} ${endpoint}" >&2
+  exit 1
+elif [[ -n "${MOCK_FIXTURES:-}" && -f "${base}.json" ]]; then
+  resp="$(cat "${base}.json")"
+else
+  case "$method:$endpoint" in
+    GET:*/labels/*)                  resp='{}';;            # label exists by default
+    GET:*/sub_issues)                resp='[]';;            # not linked by default
+    GET:*/dependencies/blocked_by)   resp='[]';;            # no edges by default
+    GET:*/issues/*)
+      num="${endpoint##*/}"
+      resp="$(jq -nc --arg num "$num" '{id:999999, number:($num|tonumber? // 0), state:"open", title:"default", body:"default", labels:[]}')"
+      ;;
+    *)                               resp='{}';;
+  esac
+fi
+
+if [[ -n "$qexpr" ]]; then
+  printf '%s' "$resp" | jq -r "$qexpr"
+else
+  printf '%s' "$resp"
+fi
+exit 0
