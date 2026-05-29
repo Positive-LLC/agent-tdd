@@ -34,10 +34,10 @@ TABLE="$(jq -r '
     "_No RootIssues yet._"
   else
     "| Ref | State | TBC | Title |\n|---|---|---|---|\n" +
-    ( [ .issues[]
-        | sort_by(.number)
-        | "| [\(.ref)](https://github.com/\(.repo)/issues/\(.number)) | \(.state) | \(.transitive_blocking_count) | \(.title | gsub("\\|"; "\\|")) |"
-      ] | sort | join("\n") )
+    ( .issues
+      | sort_by(.number)
+      | map("| [\(.ref)](https://github.com/\(.repo)/issues/\(.number)) | \(.state) | \(.transitive_blocking_count) | \(.title | gsub("\\|"; "\\|")) |")
+      | join("\n") )
   end
 ' <<<"$GRAPH_JSON")"
 
