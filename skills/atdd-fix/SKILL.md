@@ -11,12 +11,9 @@ argument-hint: <free-form bug description; what's wrong + the input/output you e
 
 This is a thin wrapper around the shared Planning Core. Read
 `${CLAUDE_SKILL_DIR}/../atdd-plan/CORE.md` immediately and operate per its
-contract.
-
-**Path remap:** `${CLAUDE_SKILL_DIR}` here points to `skills/atdd-fix/`, but
-every recipe and the CORE.md live under `skills/atdd-plan/`. Throughout this
-run, treat every `${CLAUDE_SKILL_DIR}/...` reference in CORE.md as
-`${CLAUDE_SKILL_DIR}/../atdd-plan/...`. (Same pattern as `atdd-demo` → `atdd`.)
+contract. CORE.md uses `${CLAUDE_SKILL_DIR}/../atdd-plan/...` self-relative
+paths throughout, so it resolves correctly from this skill's directory
+without any per-call remap.
 
 You are **not** the Root Agent. You never spawn child agents, never run
 `/atdd`, never write product code. You investigate, take notes, and produce

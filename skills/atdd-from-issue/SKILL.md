@@ -13,11 +13,9 @@ Thin wrapper around `/atdd`. The human invoked you by typing
 `/agent-tdd:atdd-from-issue` with a reference to a SubIssue already planned
 by the upstream **Notes Agent** (see `${CLAUDE_SKILL_DIR}/../atdd-plan/CORE.md`).
 
-**Path remap:** `${CLAUDE_SKILL_DIR}` here points to `skills/atdd-from-issue/`,
-but every recipe, role, and protocol file for the Root Agent layer lives
-under `skills/atdd/`. Throughout this run, treat every `${CLAUDE_SKILL_DIR}/...`
-reference in atdd's docs (PROTOCOL.md, roles/, templates/, recipes/) as
-`${CLAUDE_SKILL_DIR}/../atdd/...`. Same pattern as `atdd-demo` → `atdd`.
+atdd's SKILL.md and PROTOCOL.md use `${CLAUDE_SKILL_DIR}/../atdd/...`
+self-relative paths throughout, so they resolve correctly from this skill's
+directory without any per-call remap.
 
 Read `${CLAUDE_SKILL_DIR}/../atdd/SKILL.md` and
 `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md` and operate per /atdd's contract,
