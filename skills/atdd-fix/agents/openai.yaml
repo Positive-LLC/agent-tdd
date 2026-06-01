@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent TDD — Fix"
+  short_description: "Plan a bug fix as the Notes Agent"
+policy:
+  # Planning entry point; human-invoked only (`$atdd-fix`).
+  allow_implicit_invocation: false

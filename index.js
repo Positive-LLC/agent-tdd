@@ -27,31 +27,64 @@ function ensureSkills(targetDir) {
   }
 }
 
+// Minimal YAML-frontmatter reader for our SKILL.md files (single-line `key: value`
+// pairs between the leading `---` fences). Good enough for the keys we read here:
+// name, description, user-invocable, argument-hint. Returns {} if no frontmatter.
+function readFrontmatter(file) {
+  const text = readFileSync(file, "utf8")
+  const m = text.match(/^---\n([\s\S]*?)\n---/)
+  if (!m) return {}
+  const fm = {}
+  for (const line of m[1].split("\n")) {
+    const kv = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
+    if (kv) fm[kv[1]] = kv[2].trim()
+  }
+  return fm
+}
+
+// Discover every user-invocable entry skill under skills/ by reading each
+// SKILL.md's frontmatter. This replaces a hard-coded list so new entry skills
+// (e.g. atdd-fix, atdd-from-issue) are picked up automatically and retired ones
+// (atdd-demo) drop out on their own. atdd-plan is a shared library with no
+// SKILL.md, so it is naturally skipped.
+function discoverEntrySkills() {
+  const entries = []
+  for (const dir of readdirSync(SKILL_SRC, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue
+    const skillFile = join(SKILL_SRC, dir.name, "SKILL.md")
+    if (!existsSync(skillFile)) continue
+    const fm = readFrontmatter(skillFile)
+    if (fm["user-invocable"] !== "true") continue
+    entries.push({
+      name: fm.name || dir.name,
+      description: fm.description || "Agent TDD command",
+      // "(no arguments)" hint → command takes no $ARGUMENTS tail.
+      takesArgs: !!fm["argument-hint"] && !/no arguments/i.test(fm["argument-hint"]),
+    })
+  }
+  return entries
+}
+
 function ensureCommands(targetDir) {
   if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
 
-  for (const cmd of ["atdd", "atdd-demo", "atdd-compact"]) {
-    const cmdFile = join(targetDir, `${cmd}.md`)
-    if (!existsSync(cmdFile)) {
-      const argHint = (cmd === "atdd-compact") ? "" : " $ARGUMENTS"
-      const description = cmd === "atdd-compact"
-        ? "Hand off an in-flight TDD workflow to a fresh agent session"
-        : cmd === "atdd-demo"
-          ? "Run a short TDD demo to see the wave-based workflow end-to-end"
-          : "Run the Agent TDD wave-based workflow as Root"
-
-      writeFileSync(cmdFile, `---
+  for (const skill of discoverEntrySkills()) {
+    const cmdFile = join(targetDir, `${skill.name}.md`)
+    if (existsSync(cmdFile)) continue
+    const argHint = skill.takesArgs ? " $ARGUMENTS" : ""
+    // OpenCode descriptions are a single line; collapse any whitespace and trim.
+    const description = skill.description.replace(/\s+/g, " ").trim()
+    writeFileSync(cmdFile, `---
 description: ${description}
 agent: build
 subtask: true
 ---
 The human has initiated the Agent TDD workflow.
 
-First, load the skill: use the skill tool with name "${cmd}". Follow SKILL.md exactly.
+First, load the skill: use the skill tool with name "${skill.name}". Follow SKILL.md exactly.
 
 The human's specification:${argHint}
 `)
-    }
   }
 }
 

@@ -1,0 +1,41 @@
+{
+  "name": "agent-tdd",
+  "version": "0.12.0",
+  "description": "TDD in the agent era — a wave-based human-agent test co-authoring workflow that orchestrates parallel test/impl agents under one Root.",
+  "author": {
+    "name": "Willie Chang",
+    "email": "willie.chang@positivegrid.com",
+    "url": "https://github.com/Positive-LLC"
+  },
+  "homepage": "https://github.com/Positive-LLC/agent-tdd",
+  "repository": "https://github.com/Positive-LLC/agent-tdd",
+  "license": "MIT",
+  "keywords": [
+    "tdd",
+    "test-driven-development",
+    "agent",
+    "workflow",
+    "orchestration",
+    "wave",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent TDD",
+    "shortDescription": "Wave-based human-agent TDD orchestration",
+    "longDescription": "Use Agent TDD to run a wave-based test-driven workflow: a Root agent spawns parallel test and implementation agents per issue, gates each wave on terminal status and merged PRs, and drives the work from a free-form spec or a planned GitHub issue.",
+    "developerName": "Willie Chang",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Run Agent TDD on this feature.",
+      "Plan a bug fix with Agent TDD."
+    ],
+    "websiteURL": "https://github.com/Positive-LLC/agent-tdd",
+    "brandColor": "#22C55E"
+  }
+}

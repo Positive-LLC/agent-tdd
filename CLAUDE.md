@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A **Claude Code plugin** — not application code. It ships shell scripts and markdown that orchestrate a wave-based human-agent TDD workflow. The plugin is invoked from another repo via `claude --plugin-dir /path/to/agent-tdd`. As of v0.10.0 the plugin is **two layers**:
+A **multi-host coding-agent plugin** — not application code. It ships shell scripts and markdown that orchestrate a wave-based human-agent TDD workflow. As of v0.12.0 the **one `skills/` source runs on three hosts** via a per-host manifest, with no build step (pattern from obra/superpowers):
+
+- **Claude Code** — `.claude-plugin/plugin.json`; invoked via `claude --plugin-dir …`, commands namespaced `/agent-tdd:atdd`.
+- **OpenCode** — `package.json` `main` → `index.js`, which on load copies `skills/` into `.opencode/skills/`, generates one `/atdd*` command per `user-invocable` entry skill, and sets `CLAUDE_SKILL_DIR` + `AGENT_TDD_CLI=opencode` via `shell.env`.
+- **Codex** (experimental) — `.codex-plugin/plugin.json` (`"skills":"./skills/"`) + `.codex-plugin/marketplace.json`; each entry skill ships `agents/openai.yaml` (`allow_implicit_invocation:false`); invoked via `$atdd`. Codex has no session env hook, so `atdd/SKILL.md` **Step 0** resolves the env. Child agents launch per host through `AGENT_TDD_CLI` (`claude -p` / `opencode run` / `codex exec`).
+
+As of v0.10.0 the plugin is also **two layers**:
 
 - **Root Agent layer** (`skills/atdd/`): the wave orchestrator. Entry points `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue` (consume a planned SubIssue), plus the demo / compact wrappers.
 - **Notes Agent layer** (`skills/atdd-plan/` shared library + `skills/atdd-fix/` entry): the planning agent that produces well-specced GitHub artifacts for the Root Agent layer to consume.

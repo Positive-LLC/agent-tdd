@@ -14,7 +14,10 @@
 #   - Pastes the constructed initial prompt (TEST_AGENT_ROLE.md + per-issue task block).
 #   - Submits the prompt with Enter.
 #
-# Environment: AGENT_TDD_CLI (default: claude)
+# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex). The value
+# is the interactive binary launched in the window (`claude` / `opencode` /
+# `codex`), so no per-CLI branch is needed here — the prompt is pasted the same
+# way for all three.
 #
 # All progress messages go to stderr. Nothing on stdout (the recipe is fire-and-forget).
 

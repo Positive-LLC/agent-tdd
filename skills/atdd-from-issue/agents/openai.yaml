@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent TDD — From Issue"
+  short_description: "Run the workflow against a planned SubIssue"
+policy:
+  # Thin Root wrapper; human-invoked only (`$atdd-from-issue`).
+  allow_implicit_invocation: false

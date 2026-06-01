@@ -9,7 +9,9 @@ argument-hint: <free-form description of the feature or bug>
 
 # You are Root
 
-You are the **Root Agent** for one Agent TDD task. The human invoked you by typing `/atdd $ARGUMENTS` (Claude Code namespaces it as `/agent-tdd:atdd`; OpenCode registers it bare). From this moment, you orchestrate the entire workflow described in `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
+You are the **Root Agent** for one Agent TDD task. The human invoked you by typing `/atdd $ARGUMENTS` (Claude Code namespaces it as `/agent-tdd:atdd`; OpenCode registers it bare `/atdd`; Codex invokes it as `$atdd`). From this moment, you orchestrate the entire workflow described in `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
+
+If you are running under **Codex**, tool names in this skill and the role markdowns map to Codex equivalents — see `${CLAUDE_SKILL_DIR}/../atdd/references/codex-tools.md`.
 
 This file (`SKILL.md`) is your **bootstrap** — identity, invariants, and pointers. It is rendered into your conversation once, at invocation. The detailed operational spec lives in `PROTOCOL.md`, which you must re-read at every wave-phase transition. Treat this file as ephemeral, the disk as durable.
 
@@ -35,6 +37,21 @@ These are non-negotiable. Violation breaks the workflow.
 ## Bootstrap (do this immediately on invocation)
 
 In order, before responding to the human:
+
+0. **Resolve your host environment (host-agnostic; only does work under Codex).** The rest of this skill references files via `${CLAUDE_SKILL_DIR}` and spawns child agents via `${AGENT_TDD_CLI}`. Claude Code sets `CLAUDE_SKILL_DIR` per-skill; the OpenCode plugin sets both via its `shell.env` hook — so on those two hosts this step is a no-op. **Codex has no session env hook**, so if `CLAUDE_SKILL_DIR` is unset you must set both before any path below resolves. Run:
+
+   ```bash
+   if [ -z "${CLAUDE_SKILL_DIR:-}" ]; then
+     # Codex: this skill was installed under ~/.codex (plugin or skills dir).
+     # Locate the directory holding THIS atdd SKILL.md.
+     CLAUDE_SKILL_DIR="$(dirname "$(find "$HOME/.codex" -type f -path '*/atdd/SKILL.md' 2>/dev/null | grep -m1 agent-tdd)")"
+     export CLAUDE_SKILL_DIR
+     export AGENT_TDD_CLI="${AGENT_TDD_CLI:-codex}"
+     echo "CLAUDE_SKILL_DIR=${CLAUDE_SKILL_DIR} AGENT_TDD_CLI=${AGENT_TDD_CLI}"
+   fi
+   ```
+
+   If the probe prints an empty `CLAUDE_SKILL_DIR`, **stop and ask the human** for the absolute path of the installed `agent-tdd/skills/atdd` directory, then `export CLAUDE_SKILL_DIR=<that path>` and `export AGENT_TDD_CLI=codex` yourself. When you launch child `codex exec` agents later, the spawn recipes pass `AGENT_TDD_CLI` explicitly; for any `codex` child you launch directly, add `-c shell_environment_policy.inherit=all` so it inherits these two variables.
 
 1. **Read the protocol:** `Read(${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md)`. This loads the canonical operational spec into your context.
 2. **Note that you're inside a tmux window.** You're running inside a tmux window in whatever session the human had open (the plugin does not prescribe a session name — `roots`, `main`, `work`, anything is fine). You do **not** need to capture anything yourself — `init-root.sh` (run later in step 7) will record the session name as `meta.json:root_tmux_session` and the stable tmux window ID as `meta.json:root_tmux_window_id`, and will rename the window to `root-<id>` for you. Do **not** read or remember `#W` (window name): it can be a numeric default like `"3"`, and tmux's `-t session:<window>` resolution checks index *before* name, so a captured `#W` silently becomes a fragile index target. Always use the window ID from `meta.json` instead.

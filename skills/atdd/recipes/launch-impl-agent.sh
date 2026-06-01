@@ -9,7 +9,7 @@
 # Usage:  launch-impl-agent.sh <issue-num> <prompt-file> <log-dir> <status-dir>
 #
 # Environment:
-#   AGENT_TDD_CLI           CLI binary (default: claude; alt: opencode)
+#   AGENT_TDD_CLI           CLI binary (default: claude; alt: opencode, codex)
 #
 # Side effects under <log-dir>/:
 #   agent.stdout         full stdout from the agent CLI
@@ -36,14 +36,22 @@ mkdir -p "${LOG_DIR}" "${STATUS_DIR}"
 
 date -Ins > "${LOG_DIR}/agent.timing.start"
 
-# Build the invocation based on AGENT_TDD_CLI. Both flags below request the
-# same posture: non-interactive autonomy in a trusted local repo (no permission
-# prompts). They have different names per CLI:
-#   - claude:   `--permission-mode bypassPermissions` (replaced the older
-#               `--dangerously-skip-permissions` and `auto` modes).
-#   - opencode: `--dangerously-skip-permissions` (current).
+# Build the invocation based on AGENT_TDD_CLI. All forms below request the same
+# posture: non-interactive autonomy in a trusted local repo (no permission
+# prompts). The flags differ per CLI:
+#   - claude:   `claude -p PROMPT --permission-mode bypassPermissions` (replaced
+#               the older `--dangerously-skip-permissions` and `auto` modes).
+#   - opencode: `opencode run PROMPT --dangerously-skip-permissions`.
+#   - codex:    `codex exec PROMPT --dangerously-bypass-approvals-and-sandbox`.
+#               `exec` is Codex's non-interactive mode; the bypass flag is the
+#               Codex analog of bypassPermissions (skip approvals + sandbox).
+#               `--skip-git-repo-check` lets it run inside the issue worktree
+#               without re-asserting a fresh git root. exec streams the run to
+#               stdout, so the tee capture below works unchanged.
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
   AGENT_CMD=(opencode run "$(cat "${PROMPT_FILE}")" --dangerously-skip-permissions)
+elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
+  AGENT_CMD=(codex exec "$(cat "${PROMPT_FILE}")" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check)
 else
   AGENT_CMD=(claude -p "$(cat "${PROMPT_FILE}")" --permission-mode bypassPermissions)
 fi

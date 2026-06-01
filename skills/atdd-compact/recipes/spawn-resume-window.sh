@@ -4,9 +4,10 @@
 #
 # Usage:  spawn-resume-window.sh <root-id>
 #
-# Environment: AGENT_TDD_CLI (default: claude). Selects the slash-command form
-# (`/atdd resume <id>` under opencode; `/agent-tdd:atdd resume <id>` under
-# claude) and the binary launched in the new pane.
+# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex). Selects the
+# invocation form (`/agent-tdd:atdd resume <id>` under claude; `/atdd resume <id>`
+# under opencode; `$atdd resume <id>` under codex) and the binary launched in the
+# new pane.
 #
 # Prints the new window's stable tmux ID (e.g. @12) on stdout. All progress
 # messages go to stderr. Caller (Root running /atdd-compact) captures the
@@ -96,12 +97,16 @@ for _ in $(seq 1 30); do
 done
 [[ $PROMPT_OK -eq 1 ]] || die "${AGENT_TDD_CLI} prompt did not appear within 30s in ${NEW_WIN_ID} — check the pane manually"
 
-# --- send the resume slash command ---
-# Under Claude Code, plugin commands are namespaced (`/agent-tdd:atdd`); under
-# OpenCode, the npm-shipped plugin registers them bare (`/atdd`). Pick the
-# right form so the resumed Root actually re-enters the workflow.
+# --- send the resume invocation ---
+# Each host exposes the skill differently:
+#   - Claude Code: plugin commands are namespaced  -> `/agent-tdd:atdd`
+#   - OpenCode:    the plugin registers them bare   -> `/atdd`
+#   - Codex:       skills are invoked by name with $ -> `$atdd`
+# Pick the right form so the resumed Root actually re-enters the workflow.
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
   SLASH="/atdd resume ${ROOT_ID}"
+elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
+  SLASH="\$atdd resume ${ROOT_ID}"
 else
   SLASH="/agent-tdd:atdd resume ${ROOT_ID}"
 fi

@@ -23,6 +23,10 @@ What's in place:
 - ✅ Root runs in its own worktree (`.agent-tdd/<root-id>/root/`) — multiple concurrent Roots in one repo no longer share the main worktree's HEAD/index. Root ID is claimed atomically via `mkdir`. (v0.2.0)
 - ✅ Dashboard tmux session name is observed, not prescribed. The plugin previously assumed the human launched Claude Code from a session literally named `roots`; PROTOCOL.md and several recipes hardcoded `-t roots:root-<id>` for window renames. The workflow itself worked from any session (workspace `ws-root-<id>` is created on demand), but title updates silently failed when the session was named anything else. `init-root.sh` now captures the caller's session via `tmux display-message -p '#S'` and persists it as `meta.json:root_tmux_session`; PROTOCOL.md, SKILL.md, and `notify-human.sh` read it from there. WHITEPAPER.md is unchanged (immutable v1 spec). (v0.4.0)
 - ✅ Compact handoff: `/agent-tdd:atdd-compact` is a one-shot utility the human types in the current Root window when its conversation has bloated mid-workflow. It externalizes a gap-free handoff brief (template at `skills/atdd-compact/templates/checkpoint-comment.md`) to `wave-<N>/handoff.md`, comments it on the wave's active issues + open impl PRs, then `tmux new-window`s a fresh `claude` in the same dashboard session and `tmux send-keys`-fires `/agent-tdd:atdd resume <root-id>` into it. The new claude session is auto-loaded with the globally-installed plugin and re-enters `atdd`'s "Resume bootstrap" branch (added in this version's `skills/atdd/SKILL.md` edit), which skips Wave 0 and rehydrates from `meta.json` + `manifest.json` + `handoff.md`. The prior Root waits 60s, capture-panes the new window, judges visually whether the resume worked, and only then renames its own window to `[ARCHIVED] <prior-name>` (it leaves both windows alive on a failed verify). Children in `ws-root-<id>` keep running through the handoff — status files are atomic, agnostic to which Root reads them; the new Root re-issues `wave-watcher.sh` on resume. Not an orchestrator: it re-enters `/atdd`, does not duplicate wave state. (v0.8.0)
+- ✅ **Multi-host packaging (v0.12.0).** One `skills/` source, three host manifests, no build step (pattern from obra/superpowers):
+  - **Claude Code** — `.claude-plugin/plugin.json` (unchanged behavior).
+  - **OpenCode** — `package.json` `main` → `index.js`; on load it copies `skills/` into `.opencode/skills/`, generates one `/atdd*` command per `user-invocable` entry skill into `.opencode/commands/` (discovered from SKILL.md frontmatter — the old hard-coded `atdd`/`atdd-demo`/`atdd-compact` list is gone, so `atdd-fix`/`atdd-from-issue`/`atdd-feature` now register too), and sets `CLAUDE_SKILL_DIR` + `AGENT_TDD_CLI=opencode` via `shell.env`.
+  - **Codex** — `.codex-plugin/plugin.json` (`"skills": "./skills/"` + `interface`) and `.codex-plugin/marketplace.json`. Each entry skill ships `agents/openai.yaml` with `allow_implicit_invocation: false` so these heavy orchestrators never auto-inject. The spawn recipes gained a `codex exec --dangerously-bypass-approvals-and-sandbox` branch; `atdd/SKILL.md` gained a **Step 0** that resolves `CLAUDE_SKILL_DIR`/`AGENT_TDD_CLI` (Codex has no session env hook). Tool-name map at `skills/atdd/references/codex-tools.md`.
 
 Not yet validated end-to-end. See **Smoke-Test Risks** below for the specific things to watch when running the first real workflow.
 
@@ -94,6 +98,29 @@ Three implementation choices that look correct on paper but haven't been exercis
 **How to test (low cost, reversible):** in a throwaway repo with a real manifest — adopt a loose issue, unlink it, re-adopt (idempotency), add+remove a root dependency, mark+unmark ready, close+reopen. All operations are reversible.
 
 **If broken:** correct the endpoint path/verb in the one affected recipe; the mock tests pin the *call shape*, so update the matching fixture/assertion in `tests/run.sh` alongside.
+
+### 5. OpenCode end-to-end (v0.12.0)
+
+**Where:** `index.js`, the `opencode` branches in `launch-impl-agent.sh` / `spawn-test-agent.sh` / `spawn-resume-window.sh`.
+
+**What we did:** The plugin self-installs on load (skills + one command per entry skill) and child agents launch via `opencode run … --dangerously-skip-permissions`. Command generation and `shell.env` were unit-checked (a temp-dir run produces all five `/atdd*` commands and sets the two env vars), but a full wave has not run under OpenCode.
+
+**Risk / verify:** plugin loads in a real project → `/atdd` starts Root → a child `opencode run` agent writes a `.done`/`.failed` status file the watcher sees → tmux paste + prompt-ready detection (`grep -qE '^[> ]'`) match OpenCode's TUI → `/atdd resume` re-enters cleanly.
+
+### 6. Codex orchestration — experimental (v0.12.0)
+
+**Where:** `.codex-plugin/`, the `codex` branches in the spawn recipes, and `atdd/SKILL.md` Step 0.
+
+**What we did:** Packaging only is well-trodden (manifest + marketplace + `agents/openai.yaml`). The *runtime* is the unproven part: nested `codex exec` under a Codex Root, tmux window driving, worktree isolation, and the `$atdd` invoke form are all unverified against a live Codex session.
+
+**Risks / verify (in order):**
+
+- **Skills do not auto-inject.** With `allow_implicit_invocation: false` on every entry skill, confirm none of them load into an unrelated Codex session. If Codex still injects, the extra SKILL.md frontmatter keys may be the trigger — fall back to minimal `name`+`description` frontmatter on the Codex copy.
+- **Step 0 resolves the skill dir.** The probe `find "$HOME/.codex" … -path '*/atdd/SKILL.md' | grep -m1 agent-tdd` depends on where Codex's marketplace install lands skills. If it prints empty, Step 0 falls back to asking the human — confirm that path, then consider hard-coding the real install location or writing the two vars into `~/.codex/config.toml [shell_environment_policy].set`.
+- **Child `codex exec` shape.** Confirm `codex exec "<prompt>" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check` runs to completion in a worktree, streams to stdout for the `agent.stdout` capture, and writes its terminal status file. Watch session persistence and any prompt-length limits (cf. risk #3).
+- **`$atdd resume <id>` form.** The resume recipe types `$atdd resume <id>`; confirm that is how Codex re-invokes a named skill interactively, and adjust `spawn-resume-window.sh` if the live form differs.
+
+**If broken:** Codex is marked experimental in README — degrade gracefully to documenting Codex as "packaging present, orchestration pending" until a wave passes.
 
 ---
 

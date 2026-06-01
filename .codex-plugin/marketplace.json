@@ -1,0 +1,19 @@
+{
+  "name": "positive-llc",
+  "interface": {
+    "displayName": "Positive LLC"
+  },
+  "plugins": [
+    {
+      "name": "agent-tdd",
+      "source": {
+        "source": "local",
+        "path": "../.."
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Coding"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Agent TDD — Root"
+  short_description: "Run the wave-based TDD workflow"
+policy:
+  # Heavy orchestrator: spawns child agents, tmux windows, and worktrees. It must
+  # only run on an explicit human command (`$atdd ...`), never auto-injected.
+  allow_implicit_invocation: false

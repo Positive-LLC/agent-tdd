@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent TDD — Compact"
+  short_description: "Hand off an in-flight workflow to a fresh session"
+policy:
+  # Session-handoff utility; human-invoked only (`$atdd-compact`).
+  allow_implicit_invocation: false
