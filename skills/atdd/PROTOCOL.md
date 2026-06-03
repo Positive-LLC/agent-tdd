@@ -175,7 +175,7 @@ Rules:
 
 All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 
-**Terminal (`.done`, `.failed`, `.aborted`, `.crashed`)** — `.done`/`.failed`/`.aborted` are written by impl agents themselves (and `.aborted` by test agents). `.crashed` is written by the impl-agent launch wrapper (`recipes/launch-impl-agent.sh`) when the agent CLI exits non-zero before the agent wrote any other terminal status — i.e., the agent died silently mid-task.
+**Terminal (`.done`, `.failed`, `.aborted`, `.crashed`)** — `.done`/`.failed`/`.aborted` are written by impl agents themselves (and `.aborted` by test agents). `.crashed` is written by the impl-agent session supervisor (`recipes/launch-impl-agent.sh`) when the agent's interactive CLI session ends without any terminal status file present — i.e., the agent died silently mid-task. The trigger is **status absence, not exit code**: an interactive session exit returns 0 regardless of outcome. The supervisor also removes any stale `.paused` before writing `.crashed` (a dead session must not look paused — crash wins over pause).
 
 ```json
 {
@@ -191,7 +191,7 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 - `outcome` ∈ `{"success", "failed", "aborted", "crashed"}` (matches the file extension)
 - `ci_status` ∈ `{"passing", "failing", "no-checks", "not-applicable"}`
 - For `.aborted`: `pr_url` is null, `ci_status` is `"not-applicable"`, `exit_reason` describes the test-contract problem.
-- For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, exit_reason}`. The wrapper writes it; treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `agent.stderr`, `agent.exitcode`) to diagnose.
+- For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, cli, exit_reason}`. The supervisor writes it; `exit_code` is informational only (it is not the trigger). Treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `tmux.pane` — the captured pane scrollback — plus `agent.exitcode` and timing files) to diagnose.
 
 **Paused (`.paused`)** — transient; written by either test or impl agents:
 
@@ -287,7 +287,7 @@ Every agent in the wave has reached a terminal state:
 - 🛑 `.aborted` — test contract malformed; **must be consumed by you** before counting:
   - Re-spawn the test agent once with abort feedback (resets the issue to in-flight; Gate 1 is re-evaluated when it finishes), OR
   - Escalate (second-pass abort): label the issue `agent-tdd:failed`, raise hand to human.
-- 💥 `.crashed` — impl agent died silently (agent CLI exited non-zero before writing its own terminal status). Treat like `.failed`: label the issue `agent-tdd:failed`, no automatic re-spawn (the cause is unknown; could be transient API blip, internal limit, or environmental). Inspect the log bundle at `log_dir` (`agent.stderr`, `agent.exitcode`) to diagnose, then escalate to human if recurrence-prone.
+- 💥 `.crashed` — impl agent died silently (its interactive CLI session ended before any terminal status was written; the exit code is not the trigger). Treat like `.failed`: label the issue `agent-tdd:failed`, no automatic re-spawn (the cause is unknown; could be transient API blip, internal limit, or environmental). Inspect the log bundle at `log_dir` (`tmux.pane`, `agent.exitcode`) to diagnose, then escalate to human if recurrence-prone.
 
 Paused agents are **not terminal**. The wave waits indefinitely for them to be resolved. This is by design — fire-and-forget allows pause gates without timing out.
 
@@ -429,7 +429,7 @@ Every child agent receives a **fully self-contained prompt**: it does not have t
 
 1. Reading the role markdown (`${CLAUDE_SKILL_DIR}/../atdd/roles/<ROLE>.md`).
 2. Appending a **per-issue task block** (issue number, absolute paths, branch names, expected status-file path).
-3. Sending it via `tmux send-keys` (for interactive agent) or as the non-interactive `<cli> <prompt>` argument (for impl/rebase).
+3. Delivering it via tmux paste-buffer into the agent's interactive session (test **and** impl agents) or as the non-interactive `<cli> <prompt>` argument (**rebase agents only**).
 
 Concretely, the role markdowns are protocol contracts — they tell the child agent what role they play, what to do, and how to write their status. The per-issue task block fills in the variables.
 
@@ -452,15 +452,15 @@ The test agent then:
 
 ### 5.3 Impl agents
 
-Spawned by test agents (not by you directly), via fire-and-forget. The test agent invokes `recipes/spawn-impl-agent.sh`, which creates the worktree and tmux window, then dispatches `recipes/launch-impl-agent.sh` (the wrapper) into that window. The wrapper handles agent CLI invocation, stdout/stderr capture to `<state-dir>/wave-<N>/logs/issue-<N>/`, exit-code recording, the `.crashed` marker on silent death, and hardened `tmux kill-window` cleanup.
+Spawned by test agents (not by you directly), via fire-and-forget. The test agent invokes `recipes/spawn-impl-agent.sh`, which creates the worktree and tmux window, starts `tmux pipe-pane` capture to `<state-dir>/wave-<N>/logs/issue-<N>/tmux.pane`, dispatches `recipes/launch-impl-agent.sh` (the session supervisor) into that window, waits for the CLI prompt, and pastes the role + task block — the same interactive launch + paste flow as test agents. The supervisor starts the CLI **interactively**, records timing and the (informational) exit code, writes the `.crashed` marker if the session ends with no terminal status (removing any stale `.paused` first), and does hardened `tmux kill-window` cleanup.
 
 The impl agent:
 - Iterates within one agent session (run tests, edit, re-run — that is normal work, not a forbidden retry).
 - Applies the **effort heuristic** (in IMPL_AGENT_ROLE.md): bounded effort, three terminal outcomes.
+- May **pause** (`.paused` with `from: "impl-agent"`) like a test agent — you answer via `tmux send-keys` to `ws-root-<id>:issue-<N>-PR` (see §6.1, §6.2). Bounded to 2 pauses per issue by its role contract.
 - Opens a PR if it has anything to ship.
 - Runs `gh pr checks --watch <pr#>` to wait for CI.
-- Writes its terminal status file atomically.
-- Exits — `tmux kill-window` runs after the agent CLI returns.
+- Writes its terminal status file atomically, **then** self-closes (exits its session) — the supervisor kills the window after the CLI exits.
 
 ### 5.4 Rebase agents (rung 2)
 
@@ -502,26 +502,26 @@ The 30-min ceiling is **wall-clock per watcher invocation**, set once at start a
 
 When you resume:
 - `EVENT=terminal` → §3.5 housekeeping.
-- `EVENT=paused` → read the paused file's `question`, decide:
-  - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window, `rm` the `.paused` file, **re-issue the watcher** to resume waiting.
+- `EVENT=paused` → read the paused file. **First check for a coexisting `.crashed` for the same issue: crash wins.** If `.crashed` exists (or the agent's window is gone), the session is dead — `rm` the stale `.paused`, treat the issue as terminal, do **not** answer. (The supervisor normally removes the stale `.paused` itself; this rule is the belt-and-suspenders for reading the dir mid-cleanup.) Otherwise, read the `question` and decide:
+  - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window — `ws-root-<id>:issue-<N>` when `from` is `test-agent`, `ws-root-<id>:issue-<N>-PR` when `from` is `impl-agent` — then `rm` the `.paused` file and **re-issue the watcher** to resume waiting.
   - Not answerable → rename your dashboard window via the stable window ID (`meta.json:root_tmux_window_id`; e.g. `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/../atdd/recipes/notify-human.sh "issue #<X> paused" <root-id>`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the watcher.
 - `EVENT=timeout` → the wave did not reach Gate 1 within this watcher's 30-min budget. This may mean a child died silently *or* a child is doing legitimate slow work (heavy first-time compile, slow integration boot, sequential test→impl phases). You must inspect to tell which. **Do not blindly re-issue, and do not blindly escalate.** Run the health checklist below per non-terminal issue and decide.
 
   **Health checklist (per non-terminal issue X):**
   1. Parse `TERMINAL_COUNT` / `EXPECTED` from the watcher's stdout.
   2. List `<state-dir>/wave-<N>/status/` and identify which issues lack terminal files: `ls -la "${STATUS_DIR}"`.
-  3. Locate the worker for issue X: `pgrep -af "${AGENT_TDD_CLI:-claude}" | grep "spawn-impl-${X}\\|spawn-test-${X}"` (matches the prompt-file path that's passed to the agent CLI), or walk children of the issue's tmux pane PID. Record both the wrapper PID (`pgrep -af "launch-impl-agent.sh.*${X}"` or `pgrep -af "spawn-test-agent.sh.*${X}"`) and the worker PID.
+  3. Locate the worker for issue X by walking children of the issue's tmux pane PID (the agent CLI's argv no longer contains the prompt — it is pasted, not passed): `pane_pid=$(tmux list-panes -t "ws-root-<id>:issue-${X}-PR" -F '#{pane_pid}')` (drop `-PR` for the test window), then `pgrep -P "${pane_pid}"` (recursively if the shell is interposed) to find the live CLI process. Record both the wrapper PID (`pgrep -af "launch-impl-agent.sh.*${X}"` — the supervisor is the pane's foreground job and its argv still carries the issue number; the quotes in the spawn recipe's `LAUNCH_CMD` are stripped by the pane's shell, so match without them) and the worker PID (the CLI child).
   4. Evaluate **all four** signals for issue X:
       - **Wrapper alive:** wrapper PID still in `ps`.
       - **Worker alive:** the agent CLI PID still in `ps`.
-      - **Worker is doing work (CPU advancing):** sample `awk '{print $14+$15}' /proc/<worker-pid>/stat` twice, 30 seconds apart. The delta must exceed **100 clock ticks** (≈ 1 CPU-second over the 30s window). A worker with zero CPU growth over 30 seconds is deadlocked even though its PID is alive — escalate. (Note: this is the universal "is it actually working" signal because impl agents run the agent CLI non-interactively; their stdout/pane often don't grow during compile, but CPU does.)
+      - **Worker is doing work (CPU advancing):** sample `awk '{print $14+$15}' /proc/<worker-pid>/stat` twice, 30 seconds apart. The delta must exceed **100 clock ticks** (≈ 1 CPU-second over the 30s window). A worker with zero CPU growth over 30 seconds is deadlocked even though its PID is alive — escalate. (Note: this is the universal "is it actually working" signal because a CLI mid-compile or mid-test-run advances CPU without necessarily printing anything to the pane; it applies equally to the interactive test and impl agents.)
      - **No failure marker:** none of `<status-dir>/issue-${X}.{failed,aborted,crashed}` already exists (defensive — these would normally have been counted as terminal).
   5. **Verdict per issue:**
      - **All four signals green AND `<state-dir>/wave-<N>/extensions/issue-${X}` does not exist** → "really slow, not really stuck." `mkdir -p <state-dir>/wave-<N>/extensions && touch <state-dir>/wave-<N>/extensions/issue-${X}` to consume the one-time self-extension, append a one-line note to `<state-dir>/decisions.log` (e.g. `wave-<N> issue-${X}: self-extended at <ts>; CPU delta=<N> ticks/30s`), and **silently re-issue the watcher** for one more 30-min budget — no human input needed. One self-extension per issue per wave caps Root at 60 min wall-clock per issue before mandatory human escalation.
      - **Any signal red OR `extensions/issue-${X}` already exists** → escalate (steps 6–8).
 
   **Escalation (when verdict is "escalate"):**
-  6. Inspect each escalating issue's log bundle (`<state-dir>/wave-<N>/logs/issue-${X}/{agent.stderr,agent.exitcode,tmux.pane}`) and tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-${X}*`) to form your recommendation. Most common diagnoses: silently dead agent CLI with no `.crashed` written (worker PID gone, wrapper still waiting); interactive test agent that never wrote `.paused` (worker alive, CPU near zero, prompt visible in pane); self-extension exhausted while agent is busy-looping (CPU advancing but 60+ min and still no terminal status).
+  6. Inspect each escalating issue's log bundle (`<state-dir>/wave-<N>/logs/issue-${X}/{tmux.pane,agent.exitcode,agent.timing.*}` — both agent kinds are pane-captured; only impl has the supervisor's exitcode/timing files) and tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-${X}*`) to form your recommendation. Most common diagnoses: silently dead agent CLI with no `.crashed` written (worker PID gone, wrapper still waiting); an interactive agent (test or impl) that never wrote `.paused` (worker alive, CPU near zero, prompt visible in pane); an agent blocked on an in-pane permission/approval prompt (worker alive, CPU near zero, a `[y/N]`-style prompt visible in capture-pane); self-extension exhausted while agent is busy-looping (CPU advancing but 60+ min and still no terminal status).
   7. Rename your dashboard window via window ID: `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⚠ stuck (<count> of <expected> after <total>m) — human input needed'` (where `<total>` is 30 or 60 depending on whether self-extension was used) and call `${CLAUDE_SKILL_DIR}/../atdd/recipes/notify-human.sh "wave <N> stuck (<count> of <expected> after <total>m)" <root-id> urgent`.
   8. Surface to the human with a diagnostic table (per escalating issue: which of the four signals were red, log bundle pointers, one-line tmux pane summary) and a single recommendation per §1.5 P6. **Do not present a menu.** Default recommendations: (a) for a confirmed-dead worker PID, "mark it `.failed` manually (`touch <status-dir>/issue-${X}.failed`) and I'll resume — confirm/correct"; (b) for "self-extension exhausted, worker still alive but not terminal after 60 min," "the agent has had its full budget and is still not terminal — I recommend marking it `.failed` and inspecting the log bundle for re-spawn — confirm/correct."
   9. After the human responds, take the agreed action and re-issue the watcher.
@@ -538,6 +538,10 @@ Used for:
 ```bash
 # Answer a paused test agent
 tmux send-keys -t ws-root-<id>:issue-<N> 'Use src/auth/middleware.ts — that is the canonical path.' Enter
+rm <status-dir>/issue-<N>.paused
+
+# Answer a paused impl agent (note the -PR window)
+tmux send-keys -t ws-root-<id>:issue-<N>-PR 'Add the dependency — the project already vendors its peer.' Enter
 rm <status-dir>/issue-<N>.paused
 ```
 
@@ -595,7 +599,7 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 | Impl gave up (tests still red after varied attempts) | PR opened with "gave up" comment. Status `.failed`. Window self-cleans. Wave continues. |
 | Impl CI failed post-PR | Status `.failed` with `ci_status: failing`. PR open. You may retry once after auto-rebase if conflict-induced. |
 | Impl aborted (test malformed) | Status `.aborted`, no PR. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
-| Impl crashed (silent death) | The agent CLI exited non-zero before the agent wrote its own status. The launch wrapper writes `.crashed` automatically and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{agent.stderr,agent.exitcode}` to diagnose. No automatic re-spawn. |
+| Impl crashed (silent death) | The agent's interactive CLI session ended with no terminal status (any exit code — the trigger is status absence). The session supervisor removes any stale `.paused`, writes `.crashed` automatically, and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{tmux.pane,agent.exitcode}` to diagnose. No automatic re-spawn. |
 | Test agent crash (silent death) | Status file missing; watcher does not advance until its 30-min hard ceiling fires (`EVENT=timeout`, §6.1). Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
@@ -636,7 +640,7 @@ On clean termination, you:
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.
-- **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed), `.crashed` (impl agent died silently before writing its own status; written by the launch wrapper). Paused is **not** terminal.
+- **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed), `.crashed` (impl agent's session ended with no terminal status written — status absence, not exit code, is the trigger; written by the session supervisor, which also removes any stale `.paused`). Paused is **not** terminal.
 - **Agent-terminal (Gate 1)** — every agent in the wave has reached a terminal state.
 - **Wave-merged (Gate 2)** — all `.done` PRs have been merged to the Root branch.
 - **Single-session, single-PR rule** — an impl agent runs one agent session and produces at most one PR; iteration within the session is permitted, spawning new agents is not.
@@ -670,14 +674,15 @@ On clean termination, you:
 
 **On EVENT=paused:**
 - [ ] Read `.paused` JSON
+- [ ] Crash wins: if a `.crashed` for the same issue exists (or the agent's window is gone), `rm` the stale `.paused`, treat as terminal, do not answer
 - [ ] Try to answer from context (issue, worktree, code)
-- [ ] If yes: `tmux send-keys` answer, `rm` `.paused`, re-issue watcher
+- [ ] If yes: `tmux send-keys` answer to `issue-<N>` (test) or `issue-<N>-PR` (impl), `rm` `.paused`, re-issue watcher
 - [ ] If no: rename window, notify human, wait, then relay
 
 **On EVENT=timeout (30-min hard ceiling, §6.1):**
 - [ ] Parse `TERMINAL_COUNT` / `EXPECTED` from the watcher's stdout
 - [ ] List `<state-dir>/wave-<N>/status/` and identify missing issue numbers
-- [ ] **Health checklist per missing issue:** wrapper PID alive AND worker (agent CLI) PID alive AND worker CPU advancing over a 30s sample (`/proc/<pid>/stat` fields 14+15 delta > 100 ticks) AND no `.failed/.aborted/.crashed` exists
+- [ ] **Health checklist per missing issue:** wrapper PID alive AND worker (agent CLI) PID alive (find the worker as a child of the issue's tmux pane PID — the prompt is pasted, not in argv) AND worker CPU advancing over a 30s sample (`/proc/<pid>/stat` fields 14+15 delta > 100 ticks) AND no `.failed/.aborted/.crashed` exists
 - [ ] **All four green AND no `<state-dir>/wave-<N>/extensions/issue-<X>` marker:** `mkdir -p extensions/ && touch extensions/issue-<X>`, log a line in `<state-dir>/decisions.log`, silently re-issue the watcher (one self-extension per issue per wave — no human input)
 - [ ] **Any signal red OR self-extension already used:** inspect log bundles + `tmux capture-pane` for the escalating issues, rename dashboard to `⚠ stuck (<count> of <expected> after <30|60>m)`, call `notify-human.sh ... urgent`, escalate per §1.5 P6 with a per-issue diagnostic table and a single recommendation
 - [ ] After human input (escalation path only): take the agreed action (typically `touch <status-dir>/issue-<X>.failed`), then re-issue the watcher

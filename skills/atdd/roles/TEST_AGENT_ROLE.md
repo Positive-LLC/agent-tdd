@@ -125,7 +125,7 @@ bash ${PLUGIN_DIR}/recipes/spawn-impl-agent.sh \
 The recipe:
 1. Creates the impl worktree on `issue-<N>-impl` stacked off your `issue-<N>-tests`.
 2. Opens a new tmux window `${WORKSPACE_SESSION}:issue-<N>-PR` anchored at the impl worktree.
-3. Dispatches the non-interactive agent CLI with the role + task block via the launch wrapper (`recipes/launch-impl-agent.sh`), which captures logs and handles tmux window cleanup (fire-and-forget).
+3. Launches the impl agent as an **interactive** CLI session in that window, waits for its prompt, and pastes the role + task block (a supervisor wrapper, `recipes/launch-impl-agent.sh`, records timing and cleans up the window). Fire-and-forget from your perspective — the recipe returns once the prompt is pasted.
 
 You do not interact with the impl agent after spawning. It writes its own terminal status file when done.
 

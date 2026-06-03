@@ -5,7 +5,12 @@
 #
 # Behavior:
 #   - For each terminal status file (issue-<N>.{done,failed,aborted,crashed})
-#     in this wave, removes both the test and impl worktrees for that issue.
+#     in this wave, removes both the test and impl worktrees for that issue,
+#     and kills any leftover tmux windows (`issue-<N>`, `issue-<N>-PR`) in the
+#     ws-<root-id> workspace session. Windows normally close on their own
+#     (the impl supervisor kills its window; the test CLI exits) but a window
+#     lingers when the agent idles at the prompt instead of exiting, or when
+#     the test window's shell survives the CLI exit.
 #   - For each `.done` issue whose impl PR is in MERGED state, deletes the
 #     `issue-<N>-tests` and `issue-<N>-impl` branches (local + remote). The
 #     content is captured in `agent-tdd/<task>` after the squash-merge, and
@@ -49,6 +54,15 @@ for f in "${STATUS_DIR}"/issue-*.done \
     if [[ -d "$wt" ]]; then
       log "removing worktree ${wt}"
       git -C "${REPO_ROOT}" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
+    fi
+  done
+  # Kill leftover child windows for this terminal issue. Non-numeric window
+  # names resolve by exact name match (the index-before-name pitfall only
+  # bites numeric names — see PROTOCOL §2.1); already-closed windows are a
+  # harmless no-op.
+  for win in "issue-${issue_num}" "issue-${issue_num}-PR"; do
+    if tmux kill-window -t "ws-${ROOT_ID}:${win}" 2>/dev/null; then
+      log "killed leftover window ws-${ROOT_ID}:${win}"
     fi
   done
 done

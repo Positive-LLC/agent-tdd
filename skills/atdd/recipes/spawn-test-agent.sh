@@ -19,6 +19,11 @@
 # `codex`), so no per-CLI branch is needed here — the prompt is pasted the same
 # way for all three.
 #
+# spawn-impl-agent.sh is the parallel implementation for impl agents (same
+# launch + prompt-ready poll + paste flow, but routed through the
+# launch-impl-agent.sh session supervisor); keep the two in sync when
+# touching the launch flow.
+#
 # All progress messages go to stderr. Nothing on stdout (the recipe is fire-and-forget).
 
 set -euo pipefail

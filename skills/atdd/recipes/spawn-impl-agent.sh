@@ -7,15 +7,23 @@
 #   - Creates the impl worktree at .agent-tdd/<root-id>/worktrees/issue-<N>-impl
 #     on a new branch issue-<N>-impl stacked off issue-<N>-tests.
 #   - Opens a new tmux window <workspace-session>:issue-<N>-PR.
-#   - Launches the impl agent via `launch-impl-agent.sh`, which wraps the agent CLI
-#     with stdout/stderr capture, exit-code recording, a `.crashed` status marker
-#     on silent death, and hardened `tmux kill-window` cleanup.
+#   - Starts `tmux pipe-pane` writing pane output to logs/issue-<N>/tmux.pane
+#     so the interactive session is captured to disk for forensics.
+#   - Launches the agent CLI INTERACTIVELY via `launch-impl-agent.sh` (the
+#     session supervisor), which records timing, writes a `.crashed` status
+#     marker if the session ends with no terminal status, removes any stale
+#     `.paused` in that case, and hardened-kills the window afterwards.
+#   - Waits for the CLI prompt, then pastes the constructed initial prompt
+#     (IMPL_AGENT_ROLE.md + per-issue task block) and submits it with Enter —
+#     the same delivery as spawn-test-agent.sh (the parallel implementation
+#     for test agents; keep the two in sync when touching the launch flow).
 #
 # Environment: AGENT_TDD_CLI (default: claude) — propagated explicitly into the
 # tmux send-keys command line so the new pane's shell sees it regardless of
 # whether AGENT_TDD_CLI was inherited via tmux server env.
 #
-# Fire-and-forget. The test agent self-closes after this returns.
+# Fire-and-forget from the test agent's perspective: this recipe returns after
+# the prompt is pasted; the impl agent runs on in its own window.
 
 set -euo pipefail
 
@@ -77,6 +85,38 @@ fi
 log "opening tmux window ${TARGET} at ${WORKTREE_DIR}"
 tmux new-window -t "${WORKSPACE_SESSION}:" -n "${WINDOW}" -c "${WORKTREE_DIR}"
 
+# --- start pane capture before launching agent CLI ---
+# Impl agents are interactive now; pane scrollback is volatile and lost on
+# `tmux kill-window`. Pipe-pane snapshots everything to disk in real time —
+# this replaces the stdout/stderr capture the old headless wrapper did.
+LOG_DIR="${STATE_DIR}/wave-${WAVE}/logs/issue-${ISSUE_NUM}"
+mkdir -p "${LOG_DIR}"
+tmux pipe-pane -t "${TARGET}" "cat >> '${LOG_DIR}/tmux.pane'"
+log "capturing pane to ${LOG_DIR}/tmux.pane"
+
+# --- launch agent CLI via the session supervisor ---
+LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
+[[ -x "${LAUNCHER}" ]] || die "launcher not executable: ${LAUNCHER}"
+
+# tmux send-keys with -l sends the line literally; the receiving bash parses
+# and runs it. The wrapper reads $TMUX_PANE from its env (set by tmux). We
+# prefix AGENT_TDD_CLI so the launcher uses the correct CLI even if the new
+# pane's shell didn't inherit our env (tmux env propagation is unreliable
+# across servers and pre-existing sessions). The wrapper starts the CLI
+# interactively; the prompt is pasted below, not passed as an argument.
+LAUNCH_CMD="AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${LOG_DIR}' '${STATUS_DIR}'"
+tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
+tmux send-keys -t "${TARGET}" Enter
+
+# Wait for the prompt (matched by '> ' or similar).
+log "waiting for ${AGENT_TDD_CLI} prompt in ${TARGET}"
+for _ in $(seq 1 60); do
+  if tmux capture-pane -p -t "${TARGET}" 2>/dev/null | tail -5 | grep -qE '^[> ]'; then
+    break
+  fi
+  sleep 1
+done
+
 # --- build the prompt file ---
 PROMPT_FILE="${STATE_DIR}/wave-${WAVE}/spawn-impl-${ISSUE_NUM}.txt"
 mkdir -p "$(dirname "${PROMPT_FILE}")"
@@ -102,18 +142,14 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
 } > "${PROMPT_FILE}"
 log "wrote prompt to ${PROMPT_FILE}"
 
-# --- launch via wrapper that captures logs + writes .crashed on silent death ---
-LOG_DIR="${STATE_DIR}/wave-${WAVE}/logs/issue-${ISSUE_NUM}"
-mkdir -p "${LOG_DIR}"
-LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
-[[ -x "${LAUNCHER}" ]] || die "launcher not executable: ${LAUNCHER}"
+# --- paste it via tmux buffer ---
+BUF="atdd-spawn-impl-${ISSUE_NUM}"
+tmux load-buffer -b "${BUF}" "${PROMPT_FILE}"
+# bracketed paste keeps the agent CLI from treating each newline as a submit.
+tmux paste-buffer -p -t "${TARGET}" -b "${BUF}"
+tmux delete-buffer -b "${BUF}" 2>/dev/null || true
 
-# tmux send-keys with -l sends the line literally; the receiving bash parses
-# and runs it. The wrapper reads $TMUX_PANE from its env (set by tmux). We
-# prefix AGENT_TDD_CLI so the launcher uses the correct CLI even if the new
-# pane's shell didn't inherit our env (tmux env propagation is unreliable
-# across servers and pre-existing sessions).
-LAUNCH_CMD="AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${PROMPT_FILE}' '${LOG_DIR}' '${STATUS_DIR}'"
-tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
+# Submit
+sleep 0.3
 tmux send-keys -t "${TARGET}" Enter
-log "impl agent for issue #${ISSUE_NUM} dispatched (fire-and-forget); logs at ${LOG_DIR}"
+log "impl agent for issue #${ISSUE_NUM} dispatched; logs at ${LOG_DIR}"

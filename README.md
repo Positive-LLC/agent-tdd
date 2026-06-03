@@ -16,7 +16,7 @@ One skills source (`./skills/`) runs on three coding-agent hosts — **Claude Co
 | OpenCode | `package.json` → `index.js` (auto-generates `.opencode/commands/`) | `/atdd` | Supported |
 | Codex | `.codex-plugin/plugin.json` (+ marketplace) | `$atdd` | **Experimental** (see ROADMAP) |
 
-The child test/impl agents are launched per host via `AGENT_TDD_CLI` (`claude -p` / `opencode run` / `codex exec`).
+The child test/impl agents run **interactive** host-CLI sessions in their own tmux windows, selected per host via `AGENT_TDD_CLI` (`claude` / `opencode` / `codex`); only the one-shot rebase agent is headless (`claude -p` / `opencode run` / `codex exec`).
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ Codex has no per-session env hook, so the `atdd` skill's **Step 0** resolves `CL
 
 ## Safety notes
 
-- Impl agents run with `--permission-mode bypassPermissions` for non-interactive autonomy. Use only in trusted local repos.
+- Impl agents run an interactive `claude --permission-mode bypassPermissions` session (the OpenCode/Codex interactive permission posture is pending smoke verification — see ROADMAP). Use only in trusted local repos.
 - The workflow uses GitHub API heavily. Watch your 5000/hr authenticated rate limit on long workflows.
 - Each parallel agent uses its own `git worktree`. For very large repos, N parallel agents ≈ N× working-tree disk.
 - If the orchestrator process dies mid-workflow, you'll need to re-launch it manually — there is no automatic crash recovery in v1.
