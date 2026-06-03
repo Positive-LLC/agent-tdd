@@ -11,12 +11,18 @@
 #       3. a built-in default keyed by the endpoint shape
 #     where <slug> = "<METHOD>__<endpoint with / : ? & = turned into _>".
 #     `-q/--jq <expr>` is applied to the chosen response, mimicking gh.
-#   - Any other subcommand (issue/project/...) just logs and exits 0, unless
-#     $MOCK_FAIL_GLOB is set and matches the whole argv (then exit 1).
+#   - Any other subcommand (issue/project/...) logs and exits 0. If a fixture
+#     $MOCK_FIXTURES/CMD__<word1>_<word2>.json exists (e.g. CMD__project_view.json),
+#     its content is printed as the command's stdout. $MOCK_FAIL_GLOB matching
+#     the whole argv forces exit 1.
 set -uo pipefail
 
 : "${GH_LOG:?GH_LOG must be set}"
 printf '%s\n' "$*" >> "$GH_LOG"
+
+# Optional stderr noise on every call (simulates gh notices on the success
+# path) — exercises that recipes never fold stderr into parsed stdout.
+[[ -n "${MOCK_STDERR_NOISE:-}" ]] && printf '%s\n' "$MOCK_STDERR_NOISE" >&2
 
 if [[ -n "${MOCK_FAIL_GLOB:-}" && "$*" == ${MOCK_FAIL_GLOB} ]]; then
   echo "mock gh: forced failure for: $*" >&2
@@ -26,7 +32,13 @@ fi
 slug() { printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____'; }
 
 if [[ "${1:-}" != "api" ]]; then
-  # issue / project / label mutations etc. — success, already logged.
+  # issue / project / label commands — success, already logged. Reads that
+  # parse stdout (e.g. `project view --format json`, `issue list`, `issue
+  # create`) can be answered with a CMD__<word1>_<word2>.json fixture.
+  base="${MOCK_FIXTURES:-}/CMD__${1:-}_${2:-}"
+  if [[ -n "${MOCK_FIXTURES:-}" && -f "${base}.json" ]]; then
+    cat "${base}.json"
+  fi
   exit 0
 fi
 

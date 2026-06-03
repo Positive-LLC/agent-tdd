@@ -67,16 +67,20 @@ PROJECT_ID="$(jq -er '.project.id' "$MANIFEST")" \
   || die "manifest missing .project.id"
 ROOT_LABEL="$(jq -er '.labels.root // "atdd:root"' "$MANIFEST")"
 
-log "scope: org=${PROJECT_OWNER} project#${PROJECT_NUMBER} (${PROJECT_ID}) label=${ROOT_LABEL}"
+log "scope: owner=${PROJECT_OWNER} project#${PROJECT_NUMBER} (${PROJECT_ID}) label=${ROOT_LABEL}"
 
 # --- paginated GraphQL ---
 # One page = 100 items + 50 direct neighbours per side. For the scale we
 # expect (tens of RootIssues), this caps at one or two pages. Higher scale
 # would warrant tightening the per-issue neighbour cap; revisit then.
+#
+# The project is looked up by its global node id (manifest .project.id) via
+# node(id:), which works for org- AND user-owned projects alike. The old
+# organization(login:) entry point returned null for user logins.
 QUERY='
-query($org: String!, $proj: Int!, $after: String) {
-  organization(login: $org) {
-    projectV2(number: $proj) {
+query($pid: ID!, $after: String) {
+  node(id: $pid) {
+    ... on ProjectV2 {
       items(first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -111,20 +115,18 @@ while :; do
   if [[ "$after" == "null" ]]; then
     resp="$(gh api graphql \
       -f query="$QUERY" \
-      -F org="$PROJECT_OWNER" \
-      -F proj="$PROJECT_NUMBER")"
+      -f pid="$PROJECT_ID")"
   else
     resp="$(gh api graphql \
       -f query="$QUERY" \
-      -F org="$PROJECT_OWNER" \
-      -F proj="$PROJECT_NUMBER" \
+      -f pid="$PROJECT_ID" \
       -F after="$after")"
   fi
-  page_items="$(jq '.data.organization.projectV2.items.nodes' <<<"$resp")"
+  page_items="$(jq '.data.node.items.nodes' <<<"$resp")"
   raw_items="$(jq -s '.[0] + .[1]' <(echo "$raw_items") <(echo "$page_items"))"
-  has_next="$(jq -r '.data.organization.projectV2.items.pageInfo.hasNextPage' <<<"$resp")"
+  has_next="$(jq -r '.data.node.items.pageInfo.hasNextPage' <<<"$resp")"
   if [[ "$has_next" == "true" ]]; then
-    after="$(jq -r '.data.organization.projectV2.items.pageInfo.endCursor' <<<"$resp")"
+    after="$(jq -r '.data.node.items.pageInfo.endCursor' <<<"$resp")"
     log "fetched page ${page}, paging on..."
     page=$((page + 1))
   else

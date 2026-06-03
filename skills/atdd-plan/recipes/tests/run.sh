@@ -167,6 +167,100 @@ assert_not_called  "no remove-label when not ready" "--remove-label atdd:ready"
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
+echo "== manifest-ensure.sh (owner-agnostic lookup; user-owned project regression) =="
+setup_repo
+# fast path: manifest exists -> pure read, no project lookup
+run manifest-ensure.sh
+assert_ok         "fast path: prints existing manifest"
+assert_not_called "fast path makes no project lookup" "project view"
+reset_mock
+# bootstrap against a USER-owned project (regression: org-only GraphQL died here)
+rm -f "${WORK}/.agent-tdd/manifest.json"
+fixture_cmd project view <<<'{"id":"PVT_kwHO_user","title":"Cooksy"}'
+fixture_cmd issue list   <<<'[]'
+fixture_cmd issue create <<<'https://github.com/hn12404988/cooksy-hil/issues/9'
+run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
+assert_ok         "user-owned bootstrap exits 0"
+assert_called     "resolves via owner-agnostic gh project view" "project view 2 --owner hn12404988 --format json"
+assert_not_called "no org-only GraphQL lookup" "organization(login:"
+got="$(jq -r '.project.id + " " + .project.title + " " + .project.owner' "${WORK}/.agent-tdd/manifest.json" 2>/dev/null)"
+[[ "$got" == "PVT_kwHO_user Cooksy hn12404988" ]] \
+  && pass "manifest stores id+title+owner from lookup" \
+  || fail "manifest stores id+title+owner from lookup" "got: ${got}"
+reset_mock
+# bootstrap against an ORG-owned project goes through the same path
+rm -f "${WORK}/.agent-tdd/manifest.json"
+fixture_cmd project view <<<'{"id":"PVT_kwDO_org","title":"ACME Board"}'
+fixture_cmd issue list   <<<'[]'
+fixture_cmd issue create <<<'https://github.com/acme/home/issues/1'
+run manifest-ensure.sh 'https://github.com/orgs/acme/projects/7' 'acme/home'
+assert_ok         "org-owned bootstrap exits 0"
+assert_called     "org lookup uses the same owner-agnostic path" "project view 7 --owner acme --format json"
+reset_mock
+# gh writing a notice to stderr on a SUCCESSFUL call must not poison parsed stdout
+rm -f "${WORK}/.agent-tdd/manifest.json"
+fixture_cmd project view <<<'{"id":"PVT_kwHO_user","title":"Cooksy"}'
+fixture_cmd issue list   <<<'[]'
+fixture_cmd issue create <<<'https://github.com/hn12404988/cooksy-hil/issues/9'
+export MOCK_STDERR_NOISE='Notice: a new release of gh is available'
+run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
+unset MOCK_STDERR_NOISE
+assert_ok         "stderr notice on success does not poison the lookup JSON"
+reset_mock
+# gh succeeds but returns shapeless JSON (no .id) -> die, no manifest
+rm -f "${WORK}/.agent-tdd/manifest.json"
+fixture_cmd project view <<<'{"title":"x"}'
+run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
+assert_fail       "dies when lookup returns no .id"
+[[ ! -f "${WORK}/.agent-tdd/manifest.json" ]] \
+  && pass "no manifest written on shapeless lookup" \
+  || fail "no manifest written on shapeless lookup"
+reset_mock
+# valid JSON but no .title -> diagnostic die, not a silent set -e abort
+rm -f "${WORK}/.agent-tdd/manifest.json"
+fixture_cmd project view <<<'{"id":"PVT_x2"}'
+run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
+assert_fail       "dies when lookup JSON has no .title"
+grep -q 'could not resolve project title' "${WORK}/err" \
+  && pass "missing-title die carries a diagnostic" \
+  || fail "missing-title die carries a diagnostic" "stderr: $(tail -1 "${WORK}/err" 2>/dev/null)"
+reset_mock
+# lookup failure -> clean die, no manifest written
+rm -f "${WORK}/.agent-tdd/manifest.json"
+export MOCK_FAIL_GLOB='project view *'
+run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
+assert_fail       "dies when project lookup fails"
+[[ ! -f "${WORK}/.agent-tdd/manifest.json" ]] \
+  && pass "no manifest written on failed lookup" \
+  || fail "no manifest written on failed lookup"
+unset MOCK_FAIL_GLOB
+teardown_repo
+
+# ────────────────────────────────────────────────────────────────────────────
+echo "== _graph.sh (owner-agnostic node(id:) query; user-owned project regression) =="
+setup_repo
+fixture GET graphql <<'JSON'
+{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+  {"content":{"number":10,"title":"Root A","state":"OPEN","createdAt":"2026-05-28T01:23:45Z","id":"I_a","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[{"name":"atdd:root"}]},"blockedBy":{"nodes":[]},"blocking":{"nodes":[{"number":12,"repository":{"nameWithOwner":"acme/home"},"state":"OPEN"}]}}},
+  {"content":{"number":12,"title":"Root B","state":"OPEN","createdAt":"2026-05-29T01:23:45Z","id":"I_c","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[{"name":"atdd:root"}]},"blockedBy":{"nodes":[{"number":10,"repository":{"nameWithOwner":"acme/home"},"state":"OPEN"}]},"blocking":{"nodes":[]}}},
+  {"content":{"number":11,"title":"Loose issue","state":"OPEN","createdAt":"2026-05-28T02:00:00Z","id":"I_b","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[]},"blockedBy":{"nodes":[]},"blocking":{"nodes":[]}}}
+]}}}}
+JSON
+run _graph.sh
+assert_ok         "graph fetch exits 0"
+assert_called     "queries by project node id from the manifest (owner-agnostic)" "pid=PVT_x"
+assert_not_called "no org-only GraphQL query" "organization(login:"
+refs="$(jq -c '[.issues[].ref] | sort' <<<"$OUT" 2>/dev/null)"
+[[ "$refs" == '["acme/home#10","acme/home#12"]' ]] \
+  && pass "emits RootIssues only, parsed from node(id:) response shape" \
+  || fail "emits RootIssues only, parsed from node(id:) response shape" "got: ${refs}"
+tbc="$(jq -r '.issues[] | select(.ref=="acme/home#10") | .transitive_blocking_count' <<<"$OUT" 2>/dev/null)"
+[[ "$tbc" == "1" ]] \
+  && pass "transitive_blocking_count computed from new shape" \
+  || fail "transitive_blocking_count computed from new shape" "got: ${tbc}"
+teardown_repo
+
+# ────────────────────────────────────────────────────────────────────────────
 echo "== notebook-head-get.sh (Bug 1 regression: must return body, not empty) =="
 setup_repo
 fixture GET 'repos/acme/home/issues/1/comments?per_page=100&page=1' <<'JSON'

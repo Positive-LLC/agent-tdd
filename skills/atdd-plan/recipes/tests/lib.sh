@@ -20,7 +20,7 @@ setup_repo() {
   WORK="$(mktemp -d)"
   GH_LOG="${WORK}/gh.log"; : > "$GH_LOG"
   MOCK_FIXTURES="${WORK}/fixtures"; mkdir -p "$MOCK_FIXTURES"
-  unset MOCK_FAIL_GLOB
+  unset MOCK_FAIL_GLOB MOCK_STDERR_NOISE
   export GH_LOG MOCK_FIXTURES
   git -C "$WORK" init -q
   git -C "$WORK" config user.email t@example.com
@@ -43,6 +43,9 @@ reset_mock() { : > "$GH_LOG"; rm -f "${MOCK_FIXTURES:?}"/*; }
 fixture()      { cat > "${MOCK_FIXTURES}/$(printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____').json"; }
 # fixture_fail <METHOD> <endpoint>                      -> that call exits 1
 fixture_fail() { : > "${MOCK_FIXTURES}/$(printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____').fail"; }
+# fixture_cmd <word1> <word2>  (stdout body on stdin) -> canned stdout for a
+# non-api subcommand, e.g. `fixture_cmd project view` answers `gh project view …`.
+fixture_cmd()  { cat > "${MOCK_FIXTURES}/CMD__${1}_${2}.json"; }
 
 # run <recipe.sh> [args...]   — runs inside the repo; sets RC and OUT.
 # Honors STDIN_DATA (piped to the recipe) if set.

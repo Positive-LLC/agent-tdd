@@ -181,7 +181,7 @@ system has one, all pointing at the same GitHubProject + home repo + NotebookIss
     "number": <n>,
     "id": "PVT_xxx",
     "title": "<project title>",
-    "owner": "<org>"
+    "owner": "<owner login — org or user>"
   },
   "home_repo": "<org>/<repo>",
   "notebook_issue": {
@@ -199,6 +199,12 @@ system has one, all pointing at the same GitHubProject + home repo + NotebookIss
 
 `manifest-ensure.sh` creates this on first run (asking you for project URL and home repo),
 and prints it to stdout on every subsequent run.
+
+Both **org-owned** (`https://github.com/orgs/<org>/projects/<n>`) and **user-owned**
+(`https://github.com/users/<user>/projects/<n>`) GitHubProjects are supported;
+`project.owner` is the org or user login. The recipes resolve the project once via
+`gh project view` and afterwards address it by its global node id (`project.id`),
+which is owner-type-agnostic.
 
 ---
 

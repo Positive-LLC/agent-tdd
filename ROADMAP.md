@@ -99,6 +99,8 @@ Three implementation choices that look correct on paper but haven't been exercis
 
 **If broken:** correct the endpoint path/verb in the one affected recipe; the mock tests pin the *call shape*, so update the matching fixture/assertion in `tests/run.sh` alongside.
 
+**Resolved (v0.12.1) — user-owned GitHubProjects.** First live-API bug confirmed in the field: `manifest-ensure.sh` and `_graph.sh` resolved the project via org-only GraphQL (`organization(login:)`), which returns null for a user login — so bootstrap died on `https://github.com/users/<user>/projects/<n>` URLs (which the URL parser *already accepted*) and every `_graph.sh` consumer (`topology-*.sh`, `notebook-index-update.sh`, `root-depend.sh`'s same-graph/cycle guards) saw an empty graph. Fixed owner-agnostically: `manifest-ensure.sh` resolves id+title via `gh project view --owner`, `_graph.sh` queries the project by its global node id (`node(id: <manifest .project.id>)`). Reporter verified the fix live against a user-owned project (`hn12404988/cooksy-hil` ↔ user project #2). `tests/run.sh` gained the first behavioral coverage for both recipes (user-owned + org-owned bootstrap, lookup-failure, node-id query shape); the mock `gh` learned canned stdout for non-`api` subcommands (`CMD__*` fixtures, e.g. `gh project view`).
+
 ### 5. OpenCode end-to-end (v0.12.0)
 
 **Where:** `index.js`, the `opencode` branches in `launch-impl-agent.sh` / `spawn-test-agent.sh` / `spawn-resume-window.sh`.

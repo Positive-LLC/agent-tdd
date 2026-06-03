@@ -7,7 +7,9 @@
 # writes the manifest, then prints it.
 #
 # Inputs requested when bootstrapping:
-#   - GitHubProject URL (e.g. https://github.com/orgs/<org>/projects/<n>)
+#   - GitHubProject URL — org- or user-owned, i.e.
+#     https://github.com/orgs/<org>/projects/<n> or
+#     https://github.com/users/<user>/projects/<n>
 #   - home repo (e.g. Positive-LLC/pg-agent-erp)
 #
 # Usage:
@@ -42,7 +44,7 @@ PROJECT_URL="${1:-}"
 HOME_REPO="${2:-}"
 
 if [[ -z "$PROJECT_URL" ]]; then
-  printf 'GitHubProject URL (e.g. https://github.com/orgs/<org>/projects/<n>): ' >&2
+  printf 'GitHubProject URL (https://github.com/orgs/<org>/projects/<n> or .../users/<user>/projects/<n>): ' >&2
   read -r PROJECT_URL
 fi
 [[ -n "$PROJECT_URL" ]] || die "project URL is required"
@@ -65,20 +67,19 @@ fi
 [[ "$HOME_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
   || die "home repo must look like owner/name (got: $HOME_REPO)"
 
-# --- resolve project ID + title via GraphQL ---
+# --- resolve project ID + title (owner-agnostic: org- AND user-owned projects) ---
+# `gh project view` accepts any owner login; the old GraphQL organization(login:)
+# lookup returned null for user-owned projects (/users/<user>/projects/<n>).
 log "resolving project ${PROJECT_OWNER}/#${PROJECT_NUMBER}"
-PROJ_JSON="$(gh api graphql \
-  -f query='query($org: String!, $proj: Int!) {
-    organization(login: $org) {
-      projectV2(number: $proj) { id title number url }
-    }
-  }' \
-  -F org="$PROJECT_OWNER" \
-  -F proj="$PROJECT_NUMBER" 2>&1)" || die "GraphQL failed for project lookup: $PROJ_JSON"
+# Capture stdout only — gh notices on stderr must not be folded into the
+# parsed JSON. gh's own error text flows through to our stderr on failure.
+PROJ_JSON="$(gh project view "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json)" \
+  || die "project lookup failed (does the token have 'project' scope? does the project exist?)"
 
-PROJECT_ID="$(jq -er '.data.organization.projectV2.id // empty' <<<"$PROJ_JSON")" \
-  || die "could not resolve project id (does the token have 'project' scope? does the project exist?)"
-PROJECT_TITLE="$(jq -er '.data.organization.projectV2.title' <<<"$PROJ_JSON")"
+PROJECT_ID="$(jq -er '.id // empty' <<<"$PROJ_JSON")" \
+  || die "could not resolve project id from: $PROJ_JSON"
+PROJECT_TITLE="$(jq -er '.title // empty' <<<"$PROJ_JSON")" \
+  || die "could not resolve project title from: $PROJ_JSON"
 log "project resolved: id=${PROJECT_ID} title='${PROJECT_TITLE}'"
 
 # --- ensure labels exist in the home repo ---
@@ -104,7 +105,7 @@ ensure_label "$READY_LABEL"    "SubIssue is ready for /atdd to consume"         
 # --- find or create NotebookIssue ---
 log "searching for existing NotebookIssue (label=${NOTEBOOK_LABEL}) in ${HOME_REPO}"
 EXISTING="$(gh issue list -R "$HOME_REPO" --label "$NOTEBOOK_LABEL" --state open \
-  --json number,url --limit 5 2>&1)" || die "issue list failed: $EXISTING"
+  --json number,url --limit 5)" || die "issue list failed"
 NB_NUMBER="$(jq -r 'if length > 0 then .[0].number else empty end' <<<"$EXISTING")"
 NB_URL="$(jq -r 'if length > 0 then .[0].url else empty end' <<<"$EXISTING")"
 
