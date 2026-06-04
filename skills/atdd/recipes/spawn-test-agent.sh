@@ -92,7 +92,15 @@ tmux pipe-pane -t "${TARGET}" "cat >> '${LOG_DIR}/tmux.pane'"
 log "capturing pane to ${LOG_DIR}/tmux.pane"
 
 # --- launch agent CLI ---
-tmux send-keys -t "${TARGET}" "${AGENT_TDD_CLI}" Enter
+# claude: launch with bypassPermissions so the test agent's single push of the
+# tests branch does not stall on a project `ask` rule (e.g. `Bash(git push:*)`).
+# Mirrors launch-impl-agent.sh, which already uses this posture for impl agents
+# (trusted local repos only). opencode/codex: bare TUI, flags unverified.
+if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
+	tmux send-keys -t "${TARGET}" "claude --permission-mode bypassPermissions" Enter
+else
+    tmux send-keys -t "${TARGET}" "${AGENT_TDD_CLI}" Enter
+fi
 
 # Wait for the prompt (matched by '> ' or similar).
 log "waiting for ${AGENT_TDD_CLI} prompt in ${TARGET}"
