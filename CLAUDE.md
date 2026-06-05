@@ -13,7 +13,7 @@ A **multi-host coding-agent plugin** — not application code. It ships shell sc
 As of v0.10.0 the plugin is also **two layers**:
 
 - **Root Agent layer** (`skills/atdd/`): the wave orchestrator. Entry points `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue` (consume a planned SubIssue), plus the demo / compact wrappers.
-- **Notes Agent layer** (`skills/atdd-plan/` shared library + `skills/atdd-fix/` entry): the planning agent that produces well-specced GitHub artifacts for the Root Agent layer to consume.
+- **Notes Agent layer** (`skills/atdd-plan/` shared library + `skills/atdd-fix/` entry): the planning agent that produces well-specced GitHub artifacts for the Root Agent layer to consume — **and, as of v1.0.0, after a single human "go", orchestrates that layer**: it spawns one Root per ready SubIssue via `/agent-tdd:atdd-from-issue`, acting as each Root's human (delegate mode; one RootIssue at a time). Operations contracts: `skills/atdd-plan/CORE.md` (planning) + `skills/atdd-plan/ORCHESTRATE.md` (orchestration).
 
 There are **no build/lint/test commands**. Validation is:
 
@@ -24,7 +24,7 @@ There are **no build/lint/test commands**. Validation is:
 
 When documents disagree, this is the precedence:
 
-1. **PROTOCOL.md** (`skills/atdd/PROTOCOL.md`) wins for **Root Agent** operational behavior. **CORE.md** (`skills/atdd-plan/CORE.md`) wins for **Notes Agent** operational behavior. Each is the runtime contract its respective agent reads.
+1. **PROTOCOL.md** (`skills/atdd/PROTOCOL.md`) wins for **Root Agent** operational behavior. **CORE.md** (`skills/atdd-plan/CORE.md`) wins for **Notes Agent planning** behavior; **ORCHESTRATE.md** (`skills/atdd-plan/ORCHESTRATE.md`) wins for **Notes Agent orchestration** behavior. Each is the runtime contract its respective agent reads (re-read at every phase boundary).
 2. **WHITEPAPER.md** is the design rationale for *both* layers (v2 since v0.10.0; v1 covered only the Root Agent). Edit it only at major-version bumps — never for status updates or transient decisions.
 3. **ROADMAP.md** is the living tracker — current phase, smoke-test risks, deferrals, future work go here.
 
@@ -47,6 +47,8 @@ Three properties shape every file in `skills/atdd/`:
 
    Never add a *parallel orchestrator at the same layer* — the wave-state model assumes one Root per task, and the planning model assumes one Notes Agent per project. Thin wrappers over the Root Agent (like `atdd-from-issue`), one-shot utilities that re-enter `/atdd` (like `atdd-compact`), and additional Notes-Agent entry points that share `atdd-plan/CORE.md` with a different lens (`feature` vs `fix`) are all fine when independently meaningful to invoke.
 
+   The v1.0.0 **orchestrating Notes Agent is NOT a parallel orchestrator** — it is a *meta-layer above* the Root layer, not a peer of it. It spawns one Root per ready SubIssue through the unchanged `/agent-tdd:atdd-from-issue` entry, so each SubIssue still gets exactly one Root (the wave-state invariant is *preserved*, and the orchestrator is what guarantees it). It adds **no new orchestrator entry point**: orchestration is a *mode of `atdd-fix`*, armed by a human "go" at the planning→execution boundary, with its operational contract in `ORCHESTRATE.md` (which, like CORE.md/PROTOCOL.md/roles, has no SKILL.md frontmatter and is never registered as an entry skill).
+
 ### Coordination model
 
 - **Child → Root**: atomic status files (`.done`/`.failed`/`.aborted`/`.crashed`/`.paused`) under `.agent-tdd/<root-id>/wave-<N>/status/`. Root waits via a single `wave-watcher.sh` issued **once per wait with `run_in_background=true`** — this keeps Root idle (zero turns, zero tokens) until the watcher exits on terminal-threshold, first pause, or **30-min hard ceiling** (30 min wall-clock from invocation start — the safety net for silently dead child agents; on timeout Root runs a per-issue health checklist and may self-extend at most once per issue per wave before mandatory human escalation, see PROTOCOL §6.1). Background Bash does not inherit the foreground 10-min cap.
@@ -61,6 +63,16 @@ A wave does not advance until both:
 
 Wave N+1 fires only after Gate 2.
 
+### Orchestration model (Notes Agent, v1.0.0)
+
+After planning, on a single human "go" (the go-gate), the Notes Agent enters orchestration mode (`skills/atdd-plan/ORCHESTRATE.md`) and drives the Root layer:
+
+- **It is each Root's human-proxy.** It spawns one Root per ready SubIssue via `spawn-root.sh` — a bare `claude --permission-mode bypassPermissions` in a window of the orchestrator's **own** tmux session (created with `-d`, no focus steal), at the SubIssue repo's local clone, then pastes a short bootstrap pointing the Root at `atdd-from-issue/SKILL.md` (read from disk via `CLAUDE_SKILL_DIR` — no `--plugin-dir` bet, the proven test/impl delivery path). The Root's Wave-0 answers (base/account/slug) arrive as launch-line env (`AGENT_TDD_*`); it never asks a human.
+- **Child → orchestrator:** each Root writes a coarse `root-signal.json` (via the env-gated `write-signal.sh`, Root-side) to a path in the orchestrator's state dir. The orchestrator waits on `roots-watcher.sh` — single-shot, `run_in_background=true`, 10 s poll, 60 min ceiling, **zero `gh` calls** (mirrors `wave-watcher.sh`); it reads only local signals + tmux window liveness and emits one `EVENT=` line. This **bends** "two layers talk only via GitHub" for the orchestration *coordination* layer (see WHITEPAPER §10.7) — but GitHub stays the truth for "work done", and each escalation+answer is mirrored to a SubIssue comment for durable recovery.
+- **Orchestrator → Root:** `tmux send-keys` into the Root's window (after a prompt-ready poll), exactly as a Root answers a child.
+- **Orchestrator → human:** rename its own window + `notify-human.sh` + a message in the live `/agent-tdd:fix` transcript — only on genuine exceptions (delegate mode). The **final merge-to-base is always human-confirmed per (repo, base)** and the **orchestrator** runs `gh pr merge` (the Root opens the PR and stops). A `launch-root.sh` supervisor writes a `crashed` signal on silent Root death.
+- **State** lives in the invoking repo's `.agent-tdd/notes-<id>/` (claimed atomically like `root-N`); the per-cohort registry is `cohort-<RI#>/cohort.json`. The orchestrator re-derives its live-Root set from disk + GitHub + a `meta.json` glob across member repos after any compaction.
+
 ### Locked numerics (don't change without updating WHITEPAPER + PROTOCOL together)
 
 - `max_waves` default: 10 (`meta.json`)
@@ -68,6 +80,7 @@ Wave N+1 fires only after Gate 2.
 - Aborted-issue retry budget: hard-coded 1 per issue per wave
 - Status-watcher poll interval: 10 s
 - Wave-watcher hard ceiling: 30 min per invocation (wall-clock from invocation start → `EVENT=timeout`; not cumulative across the wave). On timeout, Root runs the §6.1 health checklist and may self-extend at most **once per issue per wave** if all signals green; otherwise escalates to human. Override the ceiling only via `WAVE_WATCHER_TIMEOUT_SEC` for tests.
+- **Orchestration (Notes Agent, v1.0.0):** `concurrent_root_cap` default **3** Roots per cohort (`orch-init.sh`; settable at the go-gate, stored in `meta.json:concurrent_root_cap`). One RootIssue at a time. Roots-watcher hard ceiling: 60 min per invocation (`ROOTS_WATCHER_TIMEOUT_SEC`); per-cohort wall-clock ceiling: 6 h (`meta.json:cohort_wallclock_cap_sec`) → forced human checkpoint. Roots-watcher poll interval: 10 s. Don't change these without updating `ORCHESTRATE.md` together.
 
 ## Editing rules specific to this repo
 
@@ -84,7 +97,7 @@ Wave N+1 fires only after Gate 2.
 ## Common gotchas
 
 - **Don't use `find /`** or scan filesystem-wide; this is a small repo, search from `.`.
-- **Don't add a *parallel orchestrator at the same layer* entry point.** The wave-state model assumes one Root per task. Thin wrappers that delegate to atdd's PROTOCOL.md (the way `atdd-from-issue` does) and one-shot utilities that re-enter `/atdd` in resume mode (the way `atdd-compact` does) are fine; new Root Agent orchestrators are not. The Notes Agent (v0.10.0+) is **not** a parallel orchestrator — it is a different layer that hands off to the Root Agent layer via GitHub. Read the "single user-facing skill" entry in `~/.claude/projects/-home-m6-willy-agent-tdd/memory/MEMORY.md` for the full reasoning before adding any user-invocable skill.
+- **Don't add a *parallel orchestrator at the same layer* entry point.** The wave-state model assumes one Root per task. Thin wrappers that delegate to atdd's PROTOCOL.md (the way `atdd-from-issue` does) and one-shot utilities that re-enter `/atdd` in resume mode (the way `atdd-compact` does) are fine; new Root Agent orchestrators are not. The Notes Agent is **not** a parallel orchestrator — it is a different layer. As of v1.0.0 it can also *drive* the Root layer (spawn one Root per ready SubIssue via `/agent-tdd:atdd-from-issue`, act as their human) after a human "go" — but this is a **mode of the existing `atdd-fix` entry** (contract `ORCHESTRATE.md`, no new SKILL.md), still exactly one Root per SubIssue, still no new orchestrator entry point. Read the "single user-facing skill" entry in `~/.claude/projects/-home-m6-willy-agent-tdd/memory/MEMORY.md` for the full reasoning before adding any user-invocable skill.
 - **`wave-watcher.sh` has a 30-min hard ceiling per invocation** (since v0.6.0; behavior refined in v0.6.1). Three exits: `EVENT=terminal` (Gate 1 reached), `EVENT=paused` (any `.paused` file appeared), `EVENT=timeout` (30 min wall-clock from invocation start without a terminal/paused event — note: the deadline is set once at start, NOT a "no event for 30 min" sliding window despite earlier doc claims). On `EVENT=timeout`, Root runs a per-issue health checklist (wrapper PID alive, worker agent-CLI PID alive — found as a child of the issue's tmux pane PID, since the prompt is pasted rather than passed in argv — worker CPU advancing over a 30s sample, no failure marker); if all four signals green AND `<state-dir>/wave-<N>/extensions/issue-<X>` does not yet exist, Root silently re-issues the watcher (touching the marker to consume the one-time self-extension). Otherwise Root escalates per §1.5 P6 with a diagnostic table. The ceiling is per-invocation (across re-issues each gets a fresh budget); the self-extension cap is per-issue-per-wave, capping Root at 60 min wall-clock before mandatory human escalation. The earlier "indefinite-pause guarantee" was replaced because the watcher was hanging forever on dead agents (test/impl agents that crashed without writing a status file).
 - **Impl agents launch as interactive `claude --permission-mode bypassPermissions` sessions** (since v0.13.0; the headless `claude -p` form and the interim `auto` mode are gone). Whether interactive `bypassPermissions` defeats project-level `.claude/settings.json` `permissions.ask` interception is still an open smoke question (see ROADMAP.md — `git push` was intermittently blocked under the old headless launch).
 - **Dashboard window is targeted by tmux window ID, not by `<session>:root-<id>`** (since v0.7.0). `init-root.sh` captures `#{window_id}` and persists it as `meta.json:root_tmux_window_id`; every `rename-window` / `set-window-option` in `notify-human.sh` and PROTOCOL.md uses that ID. Reason: tmux's `-t` resolution checks window-INDEX before name (man tmux: target-window), so a numeric window name (or a name Root has already overwritten with status text) silently became "the window currently at that index" — and indexes drift under `renumber-windows on` or when other windows are killed. Window IDs (`@N`) are stable for the window's lifetime. Do not reintroduce session-prefixed window targets.

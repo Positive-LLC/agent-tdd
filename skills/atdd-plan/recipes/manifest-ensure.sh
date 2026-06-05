@@ -31,6 +31,68 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" \
 MANIFEST_DIR="${REPO_ROOT}/.agent-tdd"
 MANIFEST="${MANIFEST_DIR}/manifest.json"
 
+# --- member-repo registry subcommands (orchestration mode) -------------------
+# The orchestrator needs a LOCAL CLONE of each SubIssue's target repo to run its
+# Root in. The manifest gains an additive `members` map ( "<owner>/<repo>" ->
+# { local_path } ); these subcommands resolve and register entries
+# non-interactively (Bash-tool stdin is not interactive). See CORE.md §4.
+#
+#   manifest-ensure.sh --resolve-member <owner/repo>
+#       Print members[<repo>].local_path and exit 0 IFF it is recorded, the dir
+#       exists, and the dir's origin remote is that repo. Else exit 3 (the
+#       orchestrator then asks the human and calls --register-member).
+#   manifest-ensure.sh --register-member <owner/repo> <abs-local-path>
+#       Validate the path is a git clone whose origin is <owner/repo>, record it
+#       atomically, and print the path. Refuses a wrong path (guards against
+#       sending a Root to the wrong repo). Idempotent.
+
+# origin "owner/repo" of a local clone (parses ssh or https origin URL).
+origin_nwo() {
+  local path="$1" url
+  url="$(git -C "${path}" remote get-url origin 2>/dev/null)" || return 1
+  url="${url%.git}"
+  case "${url}" in
+    *github.com:*)  printf '%s\n' "${url##*github.com:}" ;;   # git@github.com:owner/repo
+    *github.com/*)  printf '%s\n' "${url##*github.com/}" ;;   # https://github.com/owner/repo
+    *) return 1 ;;
+  esac
+}
+
+if [[ "${1:-}" == "--resolve-member" ]]; then
+  REPO_REF="${2:-}"
+  [[ -n "${REPO_REF}" ]] || die "usage: manifest-ensure.sh --resolve-member <owner/repo>"
+  [[ -f "$MANIFEST" ]] || die "no manifest at $MANIFEST — run planning first"
+  LOCAL="$(jq -r --arg r "${REPO_REF}" '.members[$r].local_path // empty' "$MANIFEST")"
+  [[ -n "${LOCAL}" ]] || { log "no recorded local_path for ${REPO_REF}"; exit 3; }
+  [[ -d "${LOCAL}" ]] || { log "recorded local_path for ${REPO_REF} no longer exists: ${LOCAL}"; exit 3; }
+  GOT="$(origin_nwo "${LOCAL}" || true)"
+  if [[ "${GOT}" != "${REPO_REF}" ]]; then
+    log "recorded path ${LOCAL} is not a clone of ${REPO_REF} (origin: ${GOT:-none})"
+    exit 3
+  fi
+  printf '%s\n' "${LOCAL}"
+  exit 0
+fi
+
+if [[ "${1:-}" == "--register-member" ]]; then
+  REPO_REF="${2:-}"; LOCAL="${3:-}"
+  [[ -n "${REPO_REF}" && -n "${LOCAL}" ]] || die "usage: manifest-ensure.sh --register-member <owner/repo> <abs-local-path>"
+  [[ -f "$MANIFEST" ]] || die "no manifest at $MANIFEST — run planning first"
+  [[ "${LOCAL}" = /* ]] || die "local path must be absolute (got: ${LOCAL})"
+  [[ -d "${LOCAL}" ]] || die "local path does not exist: ${LOCAL}"
+  git -C "${LOCAL}" rev-parse --git-dir >/dev/null 2>&1 || die "not a git repo: ${LOCAL}"
+  GOT="$(origin_nwo "${LOCAL}" || true)"
+  [[ "${GOT}" == "${REPO_REF}" ]] || die "path ${LOCAL} origin is '${GOT:-none}', not ${REPO_REF} — refusing (would send a Root to the wrong repo)"
+  TMP="${MANIFEST}.tmp.$$"
+  jq --arg r "${REPO_REF}" --arg p "${LOCAL}" \
+    '.members = ((.members // {}) + { ($r): { local_path: $p } })' \
+    "$MANIFEST" > "$TMP"
+  mv "$TMP" "$MANIFEST"
+  log "registered member ${REPO_REF} -> ${LOCAL}"
+  printf '%s\n' "${LOCAL}"
+  exit 0
+fi
+
 # --- fast path: manifest exists, just print it ---
 if [[ -f "$MANIFEST" ]]; then
   jq '.' "$MANIFEST"

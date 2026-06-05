@@ -28,16 +28,17 @@ The Root Agent runs in **autopilot mode**: it spawns child agents, reviews their
 
 Agent TDD is two layers, each with a single human-facing surface:
 
-1. **Notes Agent** — `/agent-tdd:fix` today (and, later, `/agent-tdd:feature`). The **planning** layer. Investigates privately across one or more repositories, maintains a per-project NotebookIssue, and emits well-specced GitHub artifacts: RootIssues (concept-level "heads", in a designated home repo) + SubIssues (per-repo work units, native sub-issues of their RootIssue) inside a single GitHubProject board. Never writes product code. Operations contract: `skills/atdd-plan/CORE.md`. Design rationale: §10 below.
+1. **Notes Agent** — `/agent-tdd:fix` today (and, later, `/agent-tdd:feature`). The **planning** layer, and (as of v1.0.0) the **orchestration** layer. In *planning mode* it investigates privately across one or more repositories, maintains a per-project NotebookIssue, and emits well-specced GitHub artifacts: RootIssues (concept-level "heads", in a designated home repo) + SubIssues (per-repo work units, native sub-issues of their RootIssue) inside a single GitHubProject board. After a single human "go", in *orchestration mode* it also **drives** the Root layer — spawning one Root per ready SubIssue and acting as each Root's human (delegate mode; one RootIssue at a time). Never writes product code, never becomes a Root itself. Operations contracts: `skills/atdd-plan/CORE.md` (planning) + `skills/atdd-plan/ORCHESTRATE.md` (orchestration). Design rationale: §10 below.
 
-2. **Root Agent** — `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue <owner/repo> <#>` (consume a planned SubIssue), plus the demo/compact wrappers. The **execution** layer — the wave-based orchestrator described in §1–§9. **Unchanged in v0.10.0**; only its input pipeline grew a new entry point that pre-fills `$ARGUMENTS` from a SubIssue. Operations contract: `skills/atdd/PROTOCOL.md`.
+2. **Root Agent** — `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue <owner/repo> <#>` (consume a planned SubIssue), plus the compact wrapper. The **execution** layer — the wave-based orchestrator described in §1–§9. **Behaviorally unchanged**: a Root cannot tell whether its "human" is a person or the Notes Agent. Orchestration is carried entirely by environment the spawn sets + the `atdd-from-issue` wrapper; `/atdd` and PROTOCOL.md never branch on it. Operations contract: `skills/atdd/PROTOCOL.md`.
 
-The two layers communicate **only via GitHub** — there is no IPC, no shared filesystem, no plugin-internal API. From the Root Agent's perspective, a SubIssue body looks identical to free-form `$ARGUMENTS`; the Root Agent does not know whether the upstream was a human or the Notes Agent.
+The two layers communicate via GitHub for all planning artifacts and the completion contract — **GitHub remains the single source of truth for "work done"** (a SubIssue is done only when its integration PR merges and it is closed). As of v1.0.0 the Notes Agent can additionally *orchestrate* the Root layer; that orchestration **coordination** layer uses local status files + tmux window state for Root liveness and escalation — a deliberate, scoped exception to "GitHub only", justified in §10.7. The planning artifacts and the completion contract are unchanged, and from the Root Agent's perspective nothing changes: a SubIssue body still looks identical to free-form `$ARGUMENTS`, and the Root cannot tell whether its "human" is a person or the Notes Agent.
 
 Pick the entry point that matches the situation:
 
 - One-shot spec describable inline → `/agent-tdd:atdd "<spec>"`.
-- Multi-repo bug fix that wants a planned head with cross-repo topology → `/agent-tdd:fix "<bug description>"`, then `/agent-tdd:atdd-from-issue <owner/repo> <#>` for each `atdd:ready` SubIssue.
+- Multi-repo bug fix you want planned and then **executed hands-off** → `/agent-tdd:fix "<bug description>"`, plan the heads, then say `go` to orchestrate the whole dependency graph (one RootIssue at a time, one Root per ready SubIssue; you confirm a base branch per repo and each merge to base). See §10.7.
+- Same, but you prefer to drive execution yourself (`plan-only`, or any time the session isn't inside tmux) → after planning, run `/agent-tdd:atdd-from-issue <owner/repo> <#>` for each `atdd:ready` SubIssue.
 
 ---
 
@@ -581,15 +582,32 @@ The strictly separated audiences are what enables the result-driven goal: invest
 - The graph is a DAG. Cycle prevention is enforced **at write time** by the `root-depend.sh` recipe (rejects self-loops, would-be cycles, and edges between non-RootIssues or across GitHubProjects). The Notes Agent never has to "validate" the graph after the fact — it is structurally clean by construction.
 - The Notes Agent **never computes the graph in its head**. The `topology-*.sh` recipes (next-urgent / available / blocking / blocked-by) are the single source of truth. Pushing graph logic out of the LLM is what makes prioritization deterministic and saves tokens.
 
-### 10.5 Handoff to the Root Agent
+### 10.5 Handoff to the Root Agent (manual or orchestrated)
 
-GitHub, end-to-end. The human runs `/agent-tdd:atdd-from-issue <owner/repo> <#>` pointed at a `atdd:ready` SubIssue. The wrapper fetches the SubIssue body + the parent RootIssue body and delegates to `/atdd` with that union as the Wave-0 seed, skipping freeform spec discussion. From the Root Agent's perspective, no API changes — only a new entry point that pre-fills `$ARGUMENTS`.
+The unit of handoff is `/agent-tdd:atdd-from-issue <owner/repo> <#>`: it fetches the SubIssue body + the parent RootIssue body and delegates to `/atdd` with that union as the Wave-0 seed, skipping freeform spec discussion. From the Root Agent's perspective there are no API changes — only a new entry point that pre-fills `$ARGUMENTS`.
 
-Original `/atdd` (free-form `$ARGUMENTS`) keeps working unchanged for tasks the human prefers to spec inline rather than via the Notes Agent.
+**Manual (plan-only):** the human runs that wrapper themselves, once per `atdd:ready` SubIssue. This is the fallback when the session isn't inside tmux, or when the human declines "go".
+
+**Orchestrated (default, v1.0.0+):** after a single human "go", the Notes Agent runs each ready SubIssue itself, acting as each Root's human — supplying the Root's Wave-0 answers via the spawn environment and absorbing its escalations through signals. See §10.7. Original `/atdd` (free-form `$ARGUMENTS`) keeps working unchanged for tasks the human prefers to spec inline.
 
 ### 10.6 Completion semantics
 
-A SubIssue closes when its `/atdd` run merges. A **RootIssue** is complete only when **all its SubIssues are closed** (the "join"). The Notes Agent — not `/atdd`, not automatic — closes the RootIssue, together with the human in a short review. The human stays in the loop at the head level only.
+A SubIssue closes when its `/atdd` run merges and it is closed — by the human in manual mode, or by the orchestrator in orchestrated mode (the spawned Root never edits the SubIssue; `/atdd` never closes it). A **RootIssue** is complete only when **all its SubIssues are closed** (the "join"). The Notes Agent — not `/atdd`, not automatic — closes the RootIssue, together with the human in a short review. The human's decision points are: the planning sign-offs, the orchestration "go" (which includes confirming a base branch per repo), and **each merge to base** (always human-confirmed, per (repo, base) — never batched into one rubber-stamp).
+
+### 10.7 Orchestration (delegate mode, v1.0.0)
+
+Preparing a sharp spec is one long human-agent dialogue (§10.1); *executing* a multi-repo plan is another, repeated once per SubIssue. Before v1.0.0 the human absorbed that second cost — running `/agent-tdd:atdd-from-issue` by hand for every ready SubIssue and watching each Root. Orchestration moves that loop, too, off the human: after a single "go", the Notes Agent drives the whole dependency graph and surfaces only genuine decisions. The human's role shifts from *operator* to **director/consultant** — they set scope and sequence at the "go", answer the rare question the planning artifacts don't, and confirm every merge to base; everything else runs unattended.
+
+The shape was chosen on three axes (the human's explicit calls): **full protocol up front** (mirror the Root layer's rigor — state dir, an idle-cheap completion watcher, a session supervisor, hard ceilings — rather than a thin best-effort wrapper); **delegate, consult on exceptions** (one "go", then autonomous; interrupt the human only for genuine decisions or failures); and **one RootIssue at a time** (run the parallel-safe ready SubIssues of a single `topology-available` head together, up to a small concurrent-Root cap, then advance).
+
+Four design commitments make this safe and durable:
+
+- **The orchestrator is each Root's human; the Root layer is untouched.** A spawned Root talks to "its human" exactly as before — Wave-0 questions, escalations, the final-merge confirmation. The orchestrator simply *is* that human: it supplies Wave-0 answers through the spawn environment and reads escalations from the Root's signal. `/atdd` and PROTOCOL.md never learn they're being orchestrated (the only additions are environment-gated no-ops). This is what keeps the manual handoff working unchanged and avoids a forked execution layer.
+- **GitHub stays the completion truth; coordination is local.** Polling GitHub for liveness would be slow and rate-limited, so the orchestration layer uses local per-Root signal files + tmux window state to learn "is this Root asking / stuck / done / dead" — a scoped exception to §1.5's "only via GitHub". But "work done" is still authoritative on GitHub (a merged PR + a closed SubIssue), and every escalation and its answer is **also** mirrored to a SubIssue comment, so a compacted or relocated orchestrator reconstructs in-flight decisions from GitHub, preserving the resumability the GitHub handoff was chosen for.
+- **Irreversible actions always reach the real human.** The base branch is confirmed per repo at the "go" (never defaulted — the one value the system refuses to infer), and the merge-to-base is confirmed per (repo, base) and performed by the orchestrator via `gh pr merge` after that confirmation — never auto-merged, never batched into a single rubber-stamp, and never delegated to a `send-keys "yes"` into a Root pane that might have died. A single gh account is used for the whole run, which makes the global `gh auth switch` race benign (every Root switches to the same account); per-repo distinct accounts are deferred.
+- **Failure is observable.** A spawned Root is the longest-lived child in the system, so it gets a session supervisor (the `launch-root.sh` analogue of the impl supervisor) that writes a `crashed` signal on silent death, and the watcher flags a Root whose window vanished without a clean terminal. A globally-unique workspace session name per Root prevents two Roots that claim the same repo-local `root-id` from colliding on one tmux session. The orchestrator re-derives its live-Root set from disk + GitHub after any compaction, rediscovering a Root the registry lost.
+
+The operational contract — the orchestration loop, the watcher event protocol, the consultation policy, and the compaction defense — is `skills/atdd-plan/ORCHESTRATE.md`, which is authoritative over this section exactly as PROTOCOL.md is authoritative over §1–§9.
 
 ---
 

@@ -30,6 +30,29 @@ MSG="$1"
 ROOT_ID="${2:-}"
 STYLE="${3:-info}"
 
+# --- orchestration belt-and-suspenders -------------------------------------
+# When an ORCHESTRATED Root reaches the human via this script, also drop a
+# liveness/escalation signal so the Notes-Agent orchestrator's roots-watcher
+# notices even an escalation path that PROTOCOL.md forgot to annotate with an
+# explicit write-signal.sh call. This is gated on AGENT_TDD_ORCHESTRATED (set
+# only in an orchestrated Root's env), so the orchestrator's OWN notify-human
+# calls — which surface to the real human and never set that var — never write a
+# Root signal. It is NON-CLOBBERING: it only fires when the current signal is
+# `running`/absent, so a more specific escalation signal the Root just wrote
+# (paused-needs-proxy / rebase-blocked / awaiting-merge-confirm) is preserved.
+if [[ "${AGENT_TDD_ORCHESTRATED:-}" == "1" ]] && [[ -n "${AGENT_TDD_SIGNAL_PATH:-}" ]]; then
+  _cur_state=""
+  if [[ -f "${AGENT_TDD_SIGNAL_PATH}" ]] && command -v jq >/dev/null 2>&1; then
+    _cur_state="$(jq -r '.state // empty' "${AGENT_TDD_SIGNAL_PATH}" 2>/dev/null || echo "")"
+  fi
+  if [[ -z "${_cur_state}" || "${_cur_state}" == "running" ]]; then
+    bash "$(dirname "$0")/write-signal.sh" stuck \
+      --detail "notify-human fallback: ${MSG}" \
+      --recommendation "Root escalated via notify-human with no specific signal; inspect its window." \
+      2>/dev/null || true
+  fi
+fi
+
 # Resolve dashboard session (for banner) and window ID (for rename) from
 # meta.json — captured once at init-root time, never re-derived.
 SESSION=""

@@ -237,6 +237,44 @@ unset MOCK_FAIL_GLOB
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
+echo "== manifest-ensure.sh member registry (orchestration: --resolve-member / --register-member) =="
+setup_repo
+# a fake local clone whose origin is acme/otc (git only — these subcommands never call gh)
+CLONE_OTC="${WORK}/clone-otc"; git init -q "$CLONE_OTC"
+git -C "$CLONE_OTC" remote add origin 'git@github.com:acme/otc.git'
+# resolve before register -> exit 3 (missing)
+run manifest-ensure.sh --resolve-member 'acme/otc'
+[[ "$RC" -eq 3 ]] && pass "resolve-member: unregistered -> exit 3" || fail "resolve-member: unregistered -> exit 3" "got RC=${RC}"
+[[ ! -s "$GH_LOG" ]] && pass "member ops make no gh calls" || fail "member ops make no gh calls" "gh log not empty"
+reset_mock
+# register (happy path)
+run manifest-ensure.sh --register-member 'acme/otc' "$CLONE_OTC"
+assert_ok   "register-member happy path exits 0"
+assert_out  "register-member prints the path" "$CLONE_OTC"
+got="$(jq -r '.members["acme/otc"].local_path' "${WORK}/.agent-tdd/manifest.json" 2>/dev/null)"
+[[ "$got" == "$CLONE_OTC" ]] && pass "manifest records member local_path" || fail "manifest records member local_path" "got: ${got}"
+reset_mock
+# resolve after register -> path, exit 0
+run manifest-ensure.sh --resolve-member 'acme/otc'
+assert_ok   "resolve-member after register exits 0"
+assert_out  "resolve-member prints recorded path" "$CLONE_OTC"
+reset_mock
+# register WRONG repo for this clone -> refuse (origin mismatch) — guards against wrong repo
+run manifest-ensure.sh --register-member 'acme/core' "$CLONE_OTC"
+assert_fail "register-member refuses origin/repo mismatch"
+grep -q 'origin is' "${WORK}/err" && pass "mismatch die carries a diagnostic" || fail "mismatch die carries a diagnostic" "stderr: $(tail -1 "${WORK}/err" 2>/dev/null)"
+reset_mock
+# register non-existent path -> die
+run manifest-ensure.sh --register-member 'acme/otc' "${WORK}/nope"
+assert_fail "register-member rejects missing path"
+reset_mock
+# resolve when the recorded clone's origin no longer matches -> exit 3 (stale)
+git -C "$CLONE_OTC" remote set-url origin 'git@github.com:acme/different.git'
+run manifest-ensure.sh --resolve-member 'acme/otc'
+[[ "$RC" -eq 3 ]] && pass "resolve-member: mismatched clone -> exit 3" || fail "resolve-member: mismatched clone -> exit 3" "got RC=${RC}"
+teardown_repo
+
+# ────────────────────────────────────────────────────────────────────────────
 echo "== _graph.sh (owner-agnostic node(id:) query; user-owned project regression) =="
 setup_repo
 fixture GET graphql <<'JSON'

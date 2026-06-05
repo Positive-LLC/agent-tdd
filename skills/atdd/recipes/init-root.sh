@@ -150,6 +150,29 @@ ROOT_WORKTREE="${STATE_DIR}/root"
 log "adding Root worktree at ${ROOT_WORKTREE}"
 git -C "$REPO_ROOT" worktree add "${ROOT_WORKTREE}" "${INTEGRATION_BRANCH}"
 
+# --- workspace session name ---
+# Orchestrated Roots receive a globally-unique workspace session name from the
+# Notes-Agent orchestrator (so two Roots in different repos, both claiming
+# root-1, don't collide on a single `ws-root-1` on the shared tmux server).
+# Human/manual Roots default to `ws-<root-id>` — unchanged behavior.
+WORKSPACE_SESSION="${AGENT_TDD_WS_SESSION:-ws-${ROOT_ID}}"
+
+# --- orchestration markers (additive; null for human-driven Roots) ---
+# Persisting these lets a compacted orchestrated Root re-derive from disk that it
+# is orchestrated, who its proxy is, and where its signal goes — and lets the
+# orchestrator rediscover a lost Root by globbing meta.json across member repos.
+if [[ "${AGENT_TDD_ORCHESTRATED:-}" == "1" ]]; then
+  ORCHESTRATED_JSON=true
+  NOTES_ID_JSON="\"${AGENT_TDD_NOTES_ID:-}\""
+  SIGNAL_PATH_JSON="\"${AGENT_TDD_SIGNAL_PATH:-}\""
+  SUB_REF_JSON="\"${AGENT_TDD_SUB_REF:-}\""
+else
+  ORCHESTRATED_JSON=false
+  NOTES_ID_JSON=null
+  SIGNAL_PATH_JSON=null
+  SUB_REF_JSON=null
+fi
+
 # --- meta.json ---
 META="${STATE_DIR}/meta.json"
 cat > "${META}" <<EOF
@@ -164,7 +187,12 @@ cat > "${META}" <<EOF
   "root_worktree": "${ROOT_WORKTREE}",
   "repo_root": "${REPO_ROOT}",
   "root_tmux_session": "${ROOT_TMUX_SESSION}",
-  "root_tmux_window_id": "${ROOT_TMUX_WINDOW_ID}"
+  "root_tmux_window_id": "${ROOT_TMUX_WINDOW_ID}",
+  "workspace_session": "${WORKSPACE_SESSION}",
+  "orchestrated": ${ORCHESTRATED_JSON},
+  "notes_id": ${NOTES_ID_JSON},
+  "sub_ref": ${SUB_REF_JSON},
+  "signal_path": ${SIGNAL_PATH_JSON}
 }
 EOF
 log "wrote ${META}"

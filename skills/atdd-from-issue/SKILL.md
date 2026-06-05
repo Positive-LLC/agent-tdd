@@ -23,6 +23,60 @@ with the deltas below. **All ten hard invariants from /atdd apply unchanged.**
 
 ---
 
+## 0. Orchestration probe (do this first)
+
+Check whether you were spawned by the Notes-Agent orchestrator rather than a human:
+
+```bash
+echo "ORCH=${AGENT_TDD_ORCHESTRATED:-} NOTES=${AGENT_TDD_NOTES_ID:-} BASE=${AGENT_TDD_BASE:-} ACCT=${AGENT_TDD_GH_ACCOUNT:-} SLUG=${AGENT_TDD_SLUG:-} WS=${AGENT_TDD_WS_SESSION:-} SIG=${AGENT_TDD_SIGNAL_PATH:-}"
+```
+
+(These were set on your launch line, so they live in your process environment and
+survive compaction — re-run the echo any time you need them.)
+
+- **If `AGENT_TDD_ORCHESTRATED` is empty** → you were run by a human. Ignore this
+  section entirely; the original "Wave 0 deltas" below are unchanged.
+- **If `AGENT_TDD_ORCHESTRATED=1`** → **orchestrated mode**. Your "human" is the
+  Notes-Agent orchestrator, reached only through signals — never address a person.
+  Apply these overrides on top of the Wave 0 deltas:
+
+  1. **Announce liveness immediately:** `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh running --detail "orchestrated Root bootstrapping for ${AGENT_TDD_SUB_REF:-?}"`.
+  2. **Parse `$ARGUMENTS` / fetch the seed** exactly as steps 1–2 below (the
+     orchestrator passed `SUB_REF` in your bootstrap prompt; use it).
+  3. **Skip every human question.** Do **not** ask for base / gh account / slug and
+     do **not** wait for "go". Take them from the environment:
+     `<base>=$AGENT_TDD_BASE`, `<gh-account>=$AGENT_TDD_GH_ACCOUNT`,
+     `<slug>=$AGENT_TDD_SLUG`. Proceed straight from the Wave-1 proposal into
+     autopilot.
+  4. **Use your assigned workspace session.** Everywhere PROTOCOL.md says
+     `ws-root-<id>`, use `meta.json:workspace_session` instead (init-root.sh records
+     it from `$AGENT_TDD_WS_SESSION`). This keeps your child windows from colliding
+     with a sibling Root that happens to share your `root-id` in another repo.
+  5. **Escalate by signal, not by voice.** Where PROTOCOL.md says to surface to the
+     human (an unanswerable pause, a stuck wave, a rebase-blocked PR), the env-gated
+     `write-signal.sh` lines in PROTOCOL.md already emit the right signal and
+     `notify-human.sh` drops a fallback — the orchestrator is watching. State a
+     single recommendation in the signal (`--recommendation`), per §1.5 P6.
+  6. **Final integration (§8) is different: you do NOT merge.** When all waves are
+     done, push the integration branch and **open** the PR
+     `agent-tdd/<slug>` → `<base>` (`gh pr create --base "$AGENT_TDD_BASE" --head "agent-tdd/${AGENT_TDD_SLUG}"`),
+     then signal and **stop** — do not merge, do not run `terminate-root.sh`:
+     ```bash
+     bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh awaiting-merge-confirm \
+       --pr-url "<the PR url>" --head "$(git rev-parse HEAD)" \
+       --detail "all waves merged to agent-tdd/${AGENT_TDD_SLUG}; integration PR open"
+     ```
+     The orchestrator confirms the merge with the real human, runs `gh pr merge`
+     itself, then runs `terminate-root.sh` and closes the SubIssue (ORCHESTRATE.md
+     §6). The irreversible merge-to-base is the orchestrator's, behind a human gate —
+     never yours. If a wave genuinely cannot be completed, signal `failed`
+     (`write-signal.sh failed --recommendation "..."`) and stop.
+
+  Everything else — `init-root.sh`, Wave-1 layout from the seed, all ten invariants,
+  autopilot, disk durability, re-reading PROTOCOL.md at every boundary — is unchanged.
+
+---
+
 ## Wave 0 deltas (the only thing this skill changes)
 
 The /atdd protocol's §3.1 Wave 0 has three responsibilities: (a) ask the human

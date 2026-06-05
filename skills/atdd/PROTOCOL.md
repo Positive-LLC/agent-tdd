@@ -150,6 +150,12 @@ Written once during Wave 0; re-read at the start of each wave.
 - `root_tmux_session` is the name of the tmux session the human launched the agent CLI from, captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#S'`. Used only for `tmux display-message` (the transient banner) — never as a window-rename target. The plugin does not prescribe a session name; whatever the human had open is fine.
 - `root_tmux_window_id` is the stable tmux ID of Root's window (e.g. `@7`), captured by `init-root.sh` via `tmux display-message -p -t "$TMUX_PANE" '#{window_id}'`. The `-t "$TMUX_PANE"` is required: without it tmux resolves format strings against the attached client's *active* pane (the focused window), not the calling pane, so a focus drift between agent-CLI launch and `init-root.sh` invocation would silently capture a neighboring window's ID. **This is the only safe `-t` target for `rename-window` / `set-window-option`.** Window IDs never collide and never shift, unlike window names (which Root rewrites on every status change to display state) or window indexes (which `renumber-windows` can shift). Targeting by `<session>:root-<id>` is unsafe — see §2.1.
 
+**Additive orchestration fields** (present in every `meta.json`; meaningful only when this Root was spawned by the Notes-Agent orchestrator — see `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`):
+
+- `workspace_session` — the name of your workspace tmux session. **Default `ws-<root-id>`** (human-driven Roots — unchanged behavior). An orchestrated Root receives a globally-unique name (`ws-<notes-id>-<sub-slug>`) via `$AGENT_TDD_WS_SESSION`, so two Roots that happen to claim the same `root-id` in two different repos don't collide on one `ws-root-1`. **Everywhere this document writes `ws-root-<id>`, read `meta.json:workspace_session`.** (Identical for human Roots, since it defaults to `ws-<root-id>`.)
+- `orchestrated` — `true` iff spawned in orchestration mode, else `false`.
+- `notes_id` / `signal_path` / `sub_ref` — the orchestrator's id, the absolute path this Root writes its liveness/escalation signal to, and the SubIssue this Root serves. `null` for human Roots. See §6.5.
+
 ### 2.5 Git Branch Topology
 
 ```
@@ -590,6 +596,25 @@ These manipulate window metadata only — they do **not** inject keystrokes into
 
 **Hard rule (repeat from §1):** child agents never communicate with the human directly.
 
+### 6.5 Orchestration signals (env-gated; a no-op for human-driven Roots)
+
+If you were spawned by the Notes-Agent orchestrator (`AGENT_TDD_ORCHESTRATED=1`; see `${CLAUDE_SKILL_DIR}/../atdd-from-issue/SKILL.md` §0 for the full orchestrated-mode contract), your "human" is the orchestrator, reached only through a signal file. In addition to the normal §6.3 dashboard signals, run the signal helper at the points below. `write-signal.sh` **self-gates on `AGENT_TDD_ORCHESTRATED`**, so for a human-driven Root every call is a silent no-op and this subsection changes nothing.
+
+```bash
+WS=${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh
+```
+
+| When (existing PROTOCOL step) | Signal to write |
+|---|---|
+| Wave initiation, after spawning (§3.2 step 10) | `bash $WS running --detail "wave-<N>: <count> active"` (liveness heartbeat) |
+| A pause you cannot answer from context (§6.1 `EVENT=paused`, "Not answerable" branch) — *instead of* waiting on a human at your dashboard | `bash $WS paused-needs-proxy --question "<the question>" --recommendation "<your single recommendation>"` then keep waiting; the orchestrator answers via `tmux send-keys` into your window exactly as a human would, and you proceed |
+| A stuck wave you would escalate (§6.1 `EVENT=timeout` escalate branch) | `bash $WS stuck --detail "<diagnostic>" --recommendation "<recommendation>"` |
+| Rebase ladder rung 3 (semantic) or rung 4 (regression) (§3.7) | `bash $WS rebase-blocked --pr-url "<pr>" --detail "rung 3|4: <why>" --recommendation "<recommendation>"` |
+| Final integration (§8) — **orchestrated Roots do NOT merge** | open the integration→base PR, then `bash $WS awaiting-merge-confirm --pr-url "<pr>" --head "$(git rev-parse HEAD)"` and **stop** (the orchestrator merges after the human confirms; see §8 and atdd-from-issue §0.6) |
+| An unrecoverable wave (failure-rate guard, §8) | `bash $WS failed --recommendation "<recommendation>"` and stop |
+
+`notify-human.sh` also drops a fallback signal whenever an orchestrated Root reaches its human through it (so an escalation path not listed here still surfaces). You still use the normal §6.3 dashboard renames too — they are harmless and aid forensics. The orchestrator's watcher (`${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh`) polls these signals; you never poll for it.
+
 ---
 
 ## 7. Failure Handling
@@ -621,6 +646,8 @@ The workflow ends when one of:
 On clean termination, you:
 
 1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — the branch the human named in Wave 0; never assume `main`). Do not auto-merge. Recommend `gh pr create --base <base> --head agent-tdd/<task>` rather than `git merge` — `git merge` would require switching the main worktree's HEAD, which is not yours to do.
+
+   **Orchestrated mode (`meta.json:orchestrated == true`): do NOT ask a human and do NOT merge.** Instead **open** the PR (`gh pr create --base <base> --head agent-tdd/<task>`), write the `awaiting-merge-confirm` signal (§6.5) with its url + head, and **stop** — skip steps 2–6 below. The orchestrator confirms the merge with the real human, runs `gh pr merge` itself, then runs `terminate-root.sh` and closes the SubIssue on your behalf (`${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md` §6). The irreversible merge-to-base is never yours in orchestrated mode.
 2. After human confirms and the PR is merged: close all `agent-tdd:done` issues that are tied to merged PRs.
 3. **Run termination cleanup** if the human accepted the merge:
    ```bash

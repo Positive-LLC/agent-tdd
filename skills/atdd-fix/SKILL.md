@@ -1,6 +1,6 @@
 ---
 name: atdd-fix
-description: Plan a bug-fix as the Notes Agent — investigate privately, produce well-specced RootIssues + per-repo SubIssues in the configured GitHubProject, then hand a ready SubIssue to /atdd. Use when the human types `/agent-tdd:fix <free-form bug description>`. Result-driven dialogue only; details stay in the NotebookIssue.
+description: Plan a bug-fix as the Notes Agent — investigate privately, produce well-specced RootIssues + per-repo SubIssues in the configured GitHubProject, then (by default, after a single human "go") orchestrate /atdd across the ready SubIssues — or hand off manually. Use when the human types `/agent-tdd:fix <free-form bug description>`. Result-driven dialogue only; details stay in the NotebookIssue.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob
@@ -15,10 +15,19 @@ contract. CORE.md uses `${CLAUDE_SKILL_DIR}/../atdd-plan/...` self-relative
 paths throughout, so it resolves correctly from this skill's directory
 without any per-call remap.
 
-You are **not** the Root Agent. You never spawn child agents, never run
-`/atdd`, never write product code. You investigate, take notes, and produce
-GitHub issues. The human points `/atdd` at one ready SubIssue when they're
-ready — that handoff is manual.
+You operate in **two modes**, both defined in CORE.md (and, for orchestration,
+`${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`):
+
+- **Planning mode** (default until the human says "go"): you investigate, take
+  notes, and produce GitHub issues. No tmux, no child agents, no product code.
+- **Orchestration mode** (after the human's single "go"): you spawn one Root per
+  ready SubIssue via `/agent-tdd:atdd-from-issue` and act as each Root's human —
+  running the whole dependency graph, one RootIssue at a time, consulting the human
+  only on genuine exceptions, and asking before every merge to base.
+
+You are **never** a Root yourself and **never** write product code in either mode.
+The manual handoff (the human runs `/agent-tdd:atdd-from-issue` themselves) remains
+available as the `plan-only` fallback.
 
 ## Fix lens (CORE.md §10.1, repeated here so you don't forget)
 
@@ -63,6 +72,12 @@ Follow CORE.md §2 immediately:
    whether to resume that head or start a fresh one from `$ARGUMENTS`. If
    empty, start a fresh one.
 5. Enter the discussion loop (CORE.md §5).
+6. **When ≥1 RootIssue is ready, reach the go-gate.** Run the ORCHESTRATE.md §3.1
+   Step-0 tmux check first: if the session is inside tmux, offer the human "go"
+   (orchestrate the whole graph yourself, confirming a base branch per repo) vs
+   `plan-only` (manual handoff). If not inside tmux, do **not** offer "go" — keep the
+   issues on GitHub and tell the human how to relaunch inside tmux (or continue
+   plan-only). On "go", switch to `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`.
 
 ## Reminders the wrapper exists to put in your face
 
@@ -78,8 +93,11 @@ Follow CORE.md §2 immediately:
   head into two RootIssues and put the dependency at the root level.
 - **Never compute the dependency graph yourself.** Call the `topology-*`
   recipes.
-- **The handoff is manual.** Once a SubIssue is fully specced and labelled
-  `atdd:ready` (via `ready-mark.sh`), tell the human its ref. They will run
-  `/agent-tdd:atdd-from-issue <ref>` themselves in a fresh Claude Code
-  window. (Plain `/atdd <ref>` would treat the ref as free-text spec and
-  never fetch the issue — use `atdd-from-issue`.)
+- **The handoff is orchestrated by default.** Once an available RootIssue's
+  SubIssues are labelled `atdd:ready` (via `ready-mark.sh`) and the human says "go",
+  **you** run each ready SubIssue via `/agent-tdd:atdd-from-issue`, per
+  `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`. The human can instead choose
+  `plan-only` (or you fall back to it when not inside tmux): then you just tell the
+  human each ready ref and they run `/agent-tdd:atdd-from-issue <ref>` themselves.
+  (Plain `/atdd <ref>` would treat the ref as free-text spec and never fetch the
+  issue — always use `atdd-from-issue`.)

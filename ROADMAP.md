@@ -1,6 +1,6 @@
 # Roadmap
 
-Project status, known risks, and future work for agent-tdd. The design is in [WHITEPAPER.md](WHITEPAPER.md) (immutable v1 spec). The operational protocol is in [skills/atdd/PROTOCOL.md](skills/atdd/PROTOCOL.md). This file tracks what's built, what's broken, and what's next.
+Project status, known risks, and future work for agent-tdd. The design is in [WHITEPAPER.md](WHITEPAPER.md) (v2 design rationale; edited only at major-version bumps — last at v1.0.0, which added §10.7 for orchestration). The operational protocols are in [skills/atdd/PROTOCOL.md](skills/atdd/PROTOCOL.md) (Root) and [skills/atdd-plan/ORCHESTRATE.md](skills/atdd-plan/ORCHESTRATE.md) (Notes Agent orchestration). This file tracks what's built, what's broken, and what's next.
 
 ---
 
@@ -29,13 +29,15 @@ What's in place:
   - **OpenCode** — `package.json` `main` → `index.js`; on load it copies `skills/` into `.opencode/skills/`, generates one `/atdd*` command per `user-invocable` entry skill into `.opencode/commands/` (discovered from SKILL.md frontmatter — the old hard-coded `atdd`/`atdd-demo`/`atdd-compact` list is gone, so `atdd-fix`/`atdd-from-issue`/`atdd-feature` now register too), and sets `CLAUDE_SKILL_DIR` + `AGENT_TDD_CLI=opencode` via `shell.env`.
   - **Codex** — `.codex-plugin/plugin.json` (`"skills": "./skills/"` + `interface`) and `.codex-plugin/marketplace.json`. Each entry skill ships `agents/openai.yaml` with `allow_implicit_invocation: false` so these heavy orchestrators never auto-inject. The spawn recipes gained a `codex exec --dangerously-bypass-approvals-and-sandbox` branch; `atdd/SKILL.md` gained a **Step 0** that resolves `CLAUDE_SKILL_DIR`/`AGENT_TDD_CLI` (Codex has no session env hook). Tool-name map at `skills/atdd/references/codex-tools.md`.
 
+- ✅ **Notes Agent orchestration mode (v1.0.0).** After a single human "go", the planning session drives execution instead of handing off manually: it spawns one Root per ready SubIssue via `/agent-tdd:atdd-from-issue` (a bare `claude` launched with orchestration env + a short paste-bootstrap pointing at the wrapper markdown — no `--plugin-dir` bet), one RootIssue at a time per `topology-available.sh`, up to a concurrent-Root cap (default 3). It is each Root's human-proxy: supplies Wave-0 answers via env, absorbs escalations via per-Root `root-signal.json` polled by the idle-cheap `roots-watcher.sh` (mirrors `wave-watcher.sh`; zero `gh` calls), and surfaces to the real human only on exceptions. Every merge-to-base is human-confirmed per (repo, base) and performed by the orchestrator (`gh pr merge`); the Root opens the PR and stops. A `launch-root.sh` supervisor writes a `crashed` signal on silent Root death. New recipes: `orch-init.sh`, `spawn-root.sh`, `launch-root.sh`, `roots-watcher.sh`, `write-signal.sh`; `manifest-ensure.sh` gained `--resolve-member`/`--register-member`; `init-root.sh`/`notify-human.sh`/`PROTOCOL.md` gained additive env-gated hooks (no behavior change when unset — the manual handoff is fully preserved). Contract: `skills/atdd-plan/ORCHESTRATE.md`. Major bump because it reverses two Notes-Agent invariants ("never run /atdd", "no child agents") and scopes the WHITEPAPER "only via GitHub" axiom (see §10.7).
+
 Not yet validated end-to-end. See **Smoke-Test Risks** below for the specific things to watch when running the first real workflow.
 
 ---
 
 ## Smoke-Test Risks (v1)
 
-Three implementation choices that look correct on paper but haven't been exercised in a real session. Verify these first when running the first end-to-end test, and document the resolution here.
+Several implementation choices that look correct on paper but haven't been exercised in a real session. Verify these first when running the first end-to-end test, and document the resolution here.
 
 ### 1. Multi-line prompt delivery via tmux
 
@@ -141,6 +143,17 @@ These were considered during design and deliberately deferred. Source: WHITEPAPE
 - **Auto-merge of Root branch to `main`.** Final integration is human-confirmed.
 - **Crash recovery / Root resume protocol.** If Root or the host machine dies mid-wave, status files persist on disk but Root's conversation context is lost. v1 has no automatic resume; human re-launches Root and manually consults disk state. Future: a `/agent-tdd:resume <root-id>` slash command that re-derives state from `.agent-tdd/<root-id>/` + GitHub labels.
 
+### 8. Notes Agent orchestration mode — unproven end-to-end (v1.0.0)
+
+The orchestration layer (built per the "build the full protocol now, smoke-test at the end" decision) sits on top of a Root layer that is **itself still pending end-to-end smoke test** (above), and leans on several mechanisms not yet exercised. Verify in a throwaway multi-repo project (plan two RootIssues with a dependency, say `go`, watch the first head's Roots run + merge with per-(repo,base) human confirms, watch the second head become available and run, confirm the graph drains and RootIssues close — on the claude host):
+
+- **(a) Paste-bootstrap launch.** A bare `claude --permission-mode bypassPermissions` started by `spawn-root.sh`, handed a short pasted bootstrap that points it at `atdd-from-issue/SKILL.md` (read from disk via `CLAUDE_SKILL_DIR`), actually boots into orchestrated mode and runs autonomously. (We deliberately did **not** bet on `claude --plugin-dir` registering the slash command — no existing code proves that works.) Cross-ref Risk #1 (tmux paste).
+- **(b) `git push` under unattended `bypassPermissions`.** The orchestrated Root and its grandchildren push/PR without a human watching — the same intermittent `permissions.ask` block logged in Known Risks / Future Work bites harder here (no human at the Root's window). The orchestrator's `roots-watcher` must surface a Root wedged on an in-pane permission prompt (currently it would show as a `timeout` health-check escalation). Cross-ref Risk #7a.
+- **(c) Single gh account per run.** v1 uses one gh account for the whole orchestration; the global `gh auth switch` race is benign only because all Roots switch to the *same* account. A cohort whose repos need *different* accounts is unsupported (escalate + run manually) — per-repo accounts would need `GH_CONFIG_DIR` isolation propagated to every grandchild gh process. Verify no member repo silently needs a different account.
+- **(d) Final-merge indirection.** The Root opens the integration→base PR and stops; the orchestrator confirms with the human per (repo, base) and runs `gh pr merge` itself, then `terminate-root.sh` + `issue-close.sh`. Verify the orchestrator correctly finds the Root's `root_id`/`task` (glob `<clone>/.agent-tdd/*/meta.json`) for cleanup.
+- **(e) Watcher cross-repo + liveness.** `roots-watcher.sh` reads each Root's `root-signal.json` by the absolute path recorded in `cohort.json` (repos may live on different paths) and detects a dead Root via `tmux list-windows -a` membership (not `display-message -t`, which falls back to the current window). Confirm both across real repos.
+- **(f) opencode/codex orchestrated launch deferred.** The host-capability gate refuses any SubIssue whose `AGENT_TDD_CLI` ≠ `claude` (escalate → human runs it manually). opencode has no `--plugin-dir`/paste-bootstrap equivalence verified; codex approval posture is unverified. claude is the v1 orchestration target.
+
 ---
 
 ## Known Risks
@@ -184,6 +197,11 @@ In rough priority order. Each item is a candidate for a v2 issue once v1 is vali
 - **Multi-root cross-dedup.** Concurrent Roots in one repo are now structurally safe at the git layer (each runs in its own worktree on its own integration branch — see Status). What's still missing: a shared dedup check so Root A doesn't open an `agent-tdd:pending` issue that Root B is already working on. Today each Root's dedup query filters by `agent-tdd:root-<id>`, so cross-Root overlap is invisible. Add a layer that ignores the root-id label when dedup'ing, OR have agents register a "claim" label early so other Roots can see in-flight scope.
 - **Multi-user namespacing on a shared repo.** The plugin assumes one user per repo. Two users running concurrent waves on the same GitHub repo would collide on: (a) **`agent-tdd/<task>` integration branches** — the slug is human-supplied, both users picking `sync-fixes` collide on push; (b) **`agent-tdd:root-<id>` labels** — each user computes `root-1` independently from local `.agent-tdd/`, so issues across users all get the same label and per-user filtering breaks; (c) **backlog activation race** — both users' Wave 2 could pick up the same `agent-tdd:pending` issue; (d) **layer-1 dedup scope** — agents filter `agent-tdd:pending --label agent-tdd:root-<id>`, so they only see their own user's backlog and won't dedup against the other user's in-flight issues. (Issue/PR numbers are GitHub-unique per repo so safe; `.agent-tdd/<root-id>/` dirs are local-only and gitignored so safe.) Fix shape: namespace everything by `gh api user --jq .login` — Root ID becomes `<gh-user>-<n>`, integration branches `agent-tdd/<gh-user>/<task>`, labels `agent-tdd:root-<gh-user>-<n>`. Tradeoff: longer branch names; PROTOCOL.md examples and the SKILL.md root-id derivation step need updating; existing single-user state needs a migration shim or clean break. Add when the plugin gets a second user.
 
+- **Orchestration: concurrency *across* RootIssues.** v1.0.0 runs one RootIssue at a time (its parallel-safe SubIssues together, up to the cap). Running independent unblocked RootIssues concurrently would need a cross-cohort scheduler and a watcher over multiple cohorts.
+- **Orchestration: per-repo gh accounts.** v1.0.0 uses one gh account per orchestration run (makes the global `gh auth switch` race benign). Distinct accounts per repo in one cohort would need `GH_CONFIG_DIR` isolation propagated to every grandchild gh process (Root + test + impl + rebase), since tmux doesn't propagate env to new windows.
+- **Orchestration: auto-clone of a missing member repo.** v1.0.0 asks the human for a local clone path and registers it (`manifest-ensure.sh --register-member`). A future version could `git clone` a missing member into a convention location after confirmation.
+- **Orchestration: opencode/codex hosts.** v1.0.0 refuses to orchestrate a SubIssue whose `AGENT_TDD_CLI` ≠ `claude` (the host-capability gate; the human runs those manually). opencode has no `--plugin-dir`/paste-bootstrap equivalence verified, and codex's interactive approval posture under tmux driving is unverified (Smoke-Test Risk #8f).
+
 ### Longer-term / speculative
 
 - **Issue dependency graph.** Machine-enforced cross-wave dependencies ("Wave 2 #X depends on Wave 1 #Y").
@@ -197,4 +215,4 @@ In rough priority order. Each item is a candidate for a v2 issue once v1 is vali
 
 When you finish a smoke test, move resolved Smoke-Test Risks to a "Resolved" subsection (don't delete — leave the resolution note for future readers). When you ship something from Future Work, move it to Status' "What's in place" list.
 
-The WHITEPAPER is immutable v1 design. This file is the living tracker.
+The WHITEPAPER is the design rationale (v2), edited only at major-version bumps (last: v1.0.0, §10.7 orchestration). This file is the living tracker.

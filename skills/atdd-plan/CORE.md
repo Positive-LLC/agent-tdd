@@ -19,14 +19,17 @@
 | Term            | What it is                                                                  |
 |-----------------|-----------------------------------------------------------------------------|
 | **Notes Agent** | The top human-facing agent. You. Created by this Core via `feature`/`fix`. Talks to the human, investigates, maintains the NotebookIssue, and creates RootIssues + SubIssues. Never writes product code. Not the same as the Root Agent. |
-| **Root Agent**  | The orchestrator inside `/agent-tdd:atdd`. Unrelated to RootIssue except by name. The human invokes it manually, pointed at one ready SubIssue. |
+| **Root Agent**  | The orchestrator inside `/agent-tdd:atdd`. Unrelated to RootIssue except by name. Pointed at one ready SubIssue — by the human (manual) or by you (orchestration mode). |
 | **GitHubProject** | The one shared Projects-v2 board that aggregates issues from every member repo of the system. One per system (e.g. one for the whole ERP). |
 | **NotebookIssue** | A single dedicated GitHub issue, one per GitHubProject, labeled `atdd:notebook`. The Notes Agent's private working memory + topology map. Stays off the work board view. |
 | **RootIssue**   | A concept-layer GitHub issue (the "head"). Lives in the **home repo**. Holds the distilled shared context + Input/Output that every one of its SubIssues needs. The unit of human discussion. |
 | **SubIssue**    | A per-repo work-unit GitHub issue. Lives in **its target repo**. Linked to its RootIssue as a native GitHub sub-issue. The unit handed to `/atdd`. |
 | **head**        | Conceptual term for a RootIssue when talking about discussion order. "One head at a time" = one RootIssue in dialogue at a time. |
 | **home repo**   | The one repo that hosts NotebookIssue + all RootIssues. SubIssues live in their own target repos. Recorded in every member repo's manifest. |
-| **manifest**    | `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file pointing every member repo of the system at the same GitHubProject, home repo, and NotebookIssue. |
+| **manifest**    | `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file pointing every member repo of the system at the same GitHubProject, home repo, and NotebookIssue. In orchestration mode it also carries a `members` repo→local-clone registry (§4). |
+| **orchestration mode** | The phase you enter after the human's single "go": you spawn one Root per ready SubIssue and act as each Root's human (delegate mode). Operational contract: `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`. Distinct from planning mode (this doc). |
+| **go-gate**     | The one-time human "go" that arms orchestration mode after planning. Includes confirming a base branch per repo. See ORCHESTRATE.md §3.1. |
+| **spawned Root** | A normal `/atdd-from-issue` Root you launched in orchestration mode. It does not know its "human" is you — `/atdd` is unchanged and unaware. |
 
 ---
 
@@ -40,13 +43,26 @@ There are now **two** human-facing agents in Agent TDD:
 1. **Notes Agent (you).** You converse with the human, do all the deep investigation
    (trace code, read repos), keep a private NotebookIssue, and create/maintain RootIssues
    + SubIssues in one shared GitHubProject. You never write product code.
-2. **Root Agent (`/atdd`).** The human later points it at a single ready SubIssue. It runs
-   the wave-based TDD workflow inside that SubIssue's target repo. You do **not** invoke it;
-   the human does.
+2. **Root Agent (`/atdd`).** Runs the wave-based TDD workflow inside one SubIssue's target
+   repo, pointed at a single ready SubIssue. The human points it there — **or, in
+   orchestration mode, you do, on the human's behalf** (see below).
 
-You run as one normal interactive Claude Code session — no tmux orchestration, no child
-agents. Your durable memory is the NotebookIssue + RootIssues + SubIssues in GitHub, **not**
-this conversation (which may be compacted during a multi-hour planning session).
+You operate in **two modes**:
+
+- **Planning mode** (this document, CORE.md) — one normal interactive Claude Code session, no
+  tmux, no child agents. You investigate, distill, and create RootIssues + SubIssues. This is
+  the default until the human says "go".
+- **Orchestration mode** (`${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`) — after the
+  human's single "go", you spawn one Root per ready SubIssue in tmux windows of your own
+  session and act as **each Root's human** (delegate mode: run the whole dependency graph, one
+  RootIssue at a time, consulting the human only on genuine exceptions; every merge-to-base is
+  human-confirmed). Orchestration requires the session to be inside tmux (ORCHESTRATE.md §3.1
+  Step-0); if it is not, you fall back to plan-only manual handoff (§8). You are **never** a
+  Root yourself and never write product code in either mode.
+
+Your durable memory is the NotebookIssue + RootIssues + SubIssues in GitHub (and, in
+orchestration mode, the orchestration state dir) — **not** this conversation, which may be
+compacted during a multi-hour session.
 
 ---
 
@@ -80,8 +96,12 @@ Non-negotiable. Violation defeats the purpose of this layer.
 6. **Native GitHub only.** Use native sub-issues (parent/child) and native issue dependencies
    ("blocked by"). Do not invent a custom topology mechanism or custom Project fields for it.
 
-7. **You create issues; you never run `/atdd`.** Handoff is manual: the human runs `/atdd`
-   pointed at one ready SubIssue.
+7. **Planning creates issues; orchestration runs them.** In **planning** mode you only create
+   issues — you never run `/atdd`. After the human's single "go", in **orchestration** mode
+   you drive `/atdd` per ready SubIssue via `/agent-tdd:atdd-from-issue`, acting as each Root's
+   human (`${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`). The manual handoff remains
+   available whenever the human chooses `plan-only`. You still never *write product code* and
+   never become a Root yourself.
 
 8. **One NotebookIssue per GitHubProject.** Not per repo, not per session.
 
@@ -193,12 +213,23 @@ system has one, all pointing at the same GitHubProject + home repo + NotebookIss
     "root":     "atdd:root",
     "sub":      "atdd:sub",
     "ready":    "atdd:ready"
+  },
+  "members": {
+    "<owner>/<repo>": { "local_path": "/abs/path/to/local/clone" }
   }
 }
 ```
 
 `manifest-ensure.sh` creates this on first run (asking you for project URL and home repo),
 and prints it to stdout on every subsequent run.
+
+`members` is an **additive** repo→local-clone registry used only in orchestration mode: to run
+a Root for a SubIssue in repo `R`, there must be a local clone of `R` to use as the Root's cwd.
+It starts empty and is filled on demand — `manifest-ensure.sh --resolve-member <owner/repo>`
+prints a recorded path (exit 0) or signals it's missing (exit 3), and
+`manifest-ensure.sh --register-member <owner/repo> <abs-path>` validates the path is a clone of
+that repo (refusing a wrong path, so a Root can't be sent to the wrong repo) and records it.
+Planning mode never reads `members`.
 
 Both **org-owned** (`https://github.com/orgs/<org>/projects/<n>`) and **user-owned**
 (`https://github.com/users/<user>/projects/<n>`) GitHubProjects are supported;
@@ -319,22 +350,34 @@ ROADMAP smoke-test risks for what still needs a real-repo run).
 
 ---
 
-## 8. Readiness and handoff to `/atdd`
+## 8. Readiness and handoff to `/atdd` (orchestrated by default; manual still allowed)
 
 - A SubIssue is **ready** when its spec + plan are complete and the human has agreed on the
   parent RootIssue's Input/Output. Mark it `atdd:ready` via `ready-mark.sh`.
-- Handoff is **manual and per SubIssue**: the human runs
-  `/agent-tdd:atdd-from-issue <owner/repo> <#>` pointed at one ready SubIssue. That
-  wrapper fetches the full RootIssue body (context) **plus** that SubIssue body (work),
-  then delegates to `/atdd` with the union as the Wave-0 seed (no freeform spec discussion).
-- You do not sequence SubIssues for the human. Root-level topology already tells the human
-  which heads are unblocked; within an unblocked head, any SubIssue can be picked first.
+- The wrapper that consumes a ready SubIssue is `/agent-tdd:atdd-from-issue <owner/repo> <#>`:
+  it fetches the full RootIssue body (context) **plus** that SubIssue body (work), then
+  delegates to `/atdd` with the union as the Wave-0 seed (no freeform spec discussion).
+- **Default (orchestration mode):** once an available RootIssue's SubIssues are `atdd:ready`
+  and the human said "go", **you** drive the handoff — spawning one Root per ready SubIssue via
+  `/agent-tdd:atdd-from-issue`, one RootIssue at a time per topology, acting as each Root's
+  human. The full procedure is `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`. In this mode
+  you **do** sequence: `topology-available.sh` chooses the RootIssue; within it the
+  parallel-safe ready SubIssues run together (up to the concurrent-Root cap).
+- **Manual (plan-only, or whenever the human prefers):** the human runs
+  `/agent-tdd:atdd-from-issue <owner/repo> <#>` themselves, once per ready SubIssue. This is
+  the fallback when the session is not inside tmux, or when the human declines "go". Unchanged
+  from prior behavior; here you do **not** sequence — root-level topology tells the human which
+  heads are unblocked, and within an unblocked head any SubIssue can be picked first.
 
 ---
 
 ## 9. Completion semantics
 
 - A SubIssue closes when its `/atdd` run merges and the work is done (`issue-close.sh <sub-ref>`).
+  **Who runs that close depends on mode:** in **orchestration** mode **you** (the orchestrator)
+  close it, after verifying the integration PR merged (the spawned Root never edits the
+  SubIssue — it only ever saw a Wave-0 seed; see ORCHESTRATE.md §6). In **manual** mode the
+  human closes it. `/atdd` itself never closes the SubIssue.
 - A **RootIssue is complete only when all of its SubIssues are closed** (the "join").
 - **The Notes Agent closes the RootIssue** (`issue-close.sh <root-ref>`), together with the
   human in a short review — not `/atdd`, not automatically. Use `--reason not_planned` when
