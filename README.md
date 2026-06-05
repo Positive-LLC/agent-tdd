@@ -1,8 +1,13 @@
 # agent-tdd
 
-A plugin for human-agent co-authored TDD. You spec the test cases out loud; an orchestrator agent writes red tests, implements them, opens PRs, and merges waves of work in parallel.
+A plugin for human-agent co-authored TDD. You spec the test cases; agents write the red tests, implement them, open PRs, and merge waves of work in parallel. You direct; they run the show.
 
-You only ever talk to one agent. It runs the show.
+It works in **two layers**, each a single agent you talk to:
+
+- **Plan** — `/agent-tdd:fix` (the *Notes Agent*) investigates a bug or feature across one or more repos and turns it into well-specced GitHub issues (a RootIssue + per-repo SubIssues). It surfaces only the **Input → Output** for you to sign off; the trace stays in a private notebook issue.
+- **Execute** — `/agent-tdd:atdd` (the *Root Agent*) takes one spec — typed inline, or a planned SubIssue — and runs the wave-based TDD workflow: red tests → implementation → PRs → merged waves, gated and parallel.
+
+As of **v1.0.0**, after planning you can hand the whole thing off with one word: say **"go"** and the Notes Agent **orchestrates** execution — spawning one Root per ready SubIssue and driving the entire plan to done, one head at a time, asking you only when a real decision is needed (and always before merging to a base branch). You stay the director.
 
 One skills source (`./skills/`) runs on three coding-agent hosts — **Claude Code**, **OpenCode**, and **Codex** — with a small per-host manifest. There is no build step (the pattern is borrowed from [obra/superpowers](https://github.com/obra/superpowers)).
 
@@ -17,6 +22,17 @@ One skills source (`./skills/`) runs on three coding-agent hosts — **Claude Co
 | Codex | `.codex-plugin/plugin.json` (+ marketplace) | `$atdd` | **Experimental** (see ROADMAP) |
 
 The child test/impl agents run **interactive** host-CLI sessions in their own tmux windows, selected per host via `AGENT_TDD_CLI` (`claude` / `opencode` / `codex`); only the one-shot rebase agent is headless (`claude -p` / `opencode run` / `codex exec`).
+
+## Commands
+
+| Command | What it does |
+|---------|--------------|
+| `atdd <spec>` | Execute one task from a free-form spec (the original entry). |
+| `fix <bug description>` | Plan a (possibly multi-repo) bug fix as the Notes Agent, then orchestrate execution on your **"go"** — or hand off manually. |
+| `atdd-from-issue <owner/repo> <#>` | Execute one planned SubIssue (what orchestration drives under the hood — you can also run it yourself). |
+| `atdd-compact` | Hand a long-running Root off to a fresh window when its context fills up. |
+
+Prefix per host: Claude Code `/agent-tdd:<command>`, OpenCode `/<command>`, Codex `$<command>`. (`atdd-feature` planning is deferred.)
 
 ## Prerequisites
 
@@ -58,15 +74,28 @@ Codex has no per-session env hook, so the `atdd` skill's **Step 0** resolves `CL
 
 ## Use
 
-1. In any tmux window, launch your host CLI (`claude` / `opencode` / `codex`).
-2. Invoke the workflow (use the form for your host):
-   ```
-   /agent-tdd:atdd <describe new feature or bug>   # Claude Code
-   /atdd <describe new feature or bug>              # OpenCode
-   $atdd <describe new feature or bug>              # Codex
-   ```
-3. The agent discusses the spec with you (Wave 0). When you're aligned, say **"go"**.
-4. From there, the agent is in autopilot. The window title updates with live status, and you'll only be pinged when human input is genuinely needed.
+Two ways in. **Both** start by launching your host CLI **inside a tmux window** (`tmux new -s atdd`, then `claude` / `opencode` / `codex`). The command forms below are Claude Code; on OpenCode drop the `agent-tdd:` prefix (`/atdd`, `/fix`, …), on Codex use `$atdd`, `$fix`, ….
+
+### A — one task, spec it inline
+
+```
+/agent-tdd:atdd <describe the feature or bug>
+```
+
+The Root Agent discusses the test cases with you (Wave 0). When you're aligned, say **"go"** — from there it's autopilot: the window title shows live status, and you're pinged only when input is genuinely needed.
+
+### B — plan a (multi-repo) change, then let it run
+
+```
+/agent-tdd:fix <describe the bug>
+```
+
+The Notes Agent investigates and proposes the **Input → Output**; you sign off, and it writes the GitHub issues. When at least one SubIssue is ready it asks you to choose:
+
+- **`go`** → it **orchestrates**: spawns a Root per ready SubIssue and drives the whole plan to done, one head at a time — confirming a base branch per repo and asking before each merge to base. *(Needs tmux — that's why you launched inside it. If you're not in tmux, this option isn't offered.)*
+- **`plan-only`** → it stops at the issues; you run `/agent-tdd:atdd-from-issue <owner/repo> <#>` yourself, per ready SubIssue, whenever you want.
+
+Either way you only ever talk to one agent at a time, and it keeps you out of the loop until a decision is genuinely yours.
 
 ## Safety notes
 
@@ -77,6 +106,6 @@ Codex has no per-session env hook, so the `atdd` skill's **Step 0** resolves `CL
 
 ## Learn more
 
-- **Design rationale** → [WHITEPAPER.md](WHITEPAPER.md)
-- **Operational spec** → [skills/atdd/PROTOCOL.md](skills/atdd/PROTOCOL.md)
+- **Design rationale (both layers)** → [WHITEPAPER.md](WHITEPAPER.md) (orchestration is §10.7)
+- **Operational specs** → [skills/atdd/PROTOCOL.md](skills/atdd/PROTOCOL.md) (Root execution) · [skills/atdd-plan/CORE.md](skills/atdd-plan/CORE.md) (Notes Agent planning) · [skills/atdd-plan/ORCHESTRATE.md](skills/atdd-plan/ORCHESTRATE.md) (Notes Agent orchestration)
 - **Status, known risks, future work** → [ROADMAP.md](ROADMAP.md)
