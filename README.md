@@ -31,8 +31,8 @@ The child test/impl agents run **interactive** host-CLI sessions in their own tm
 ### Claude Code
 
 ```
-/plugin marketplace add Positive-LLC/pg-skills
-/plugin install agent-tdd@pg-backend-plugins
+/plugin marketplace add hn12404988/emacs_setup
+/plugin install agent-tdd@willie-plugins
 ```
 
 ### OpenCode
