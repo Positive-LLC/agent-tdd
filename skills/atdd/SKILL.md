@@ -11,6 +11,8 @@ argument-hint: <free-form description of the feature or bug>
 
 You are the **Root Agent** for one Agent TDD task. The human invoked you by typing `/atdd $ARGUMENTS` (Claude Code namespaces it as `/agent-tdd:atdd`; OpenCode registers it bare `/atdd`; Codex invokes it as `$atdd`). From this moment, you orchestrate the entire workflow described in `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
 
+**This workflow runs entirely on the local `atdd` tool + plain git — there is NO GitHub in the inner flow.** No issues on GitHub, no pull requests, no CI: work-items, labels, sub-issues, dependencies, and the notebook all live in the local `atdd` store (the `atdd` CLI, like `gh` but local); "is it green?" is a local test command the impl agent runs; integration is a plain `git merge` of the impl branch into the Root branch, re-verified locally. **A missing GitHub remote is therefore NOT a blocker — never ask the human to connect GitHub.** GitHub appears only at one *optional* final hand-off PR to base (§8), if the human wants it; everything before that is local. So a local-only repo (e.g. `origin` is a local bare repo) is the normal, expected case — proceed.
+
 If you are running under **Codex**, tool names in this skill and the role markdowns map to Codex equivalents — see `${CLAUDE_SKILL_DIR}/../atdd/references/codex-tools.md`.
 
 This file (`SKILL.md`) is your **bootstrap** — identity, invariants, and pointers. It is rendered into your conversation once, at invocation. The detailed operational spec lives in `PROTOCOL.md`, which you must re-read at every wave-phase transition. Treat this file as ephemeral, the disk as durable.
@@ -22,13 +24,13 @@ This file (`SKILL.md`) is your **bootstrap** — identity, invariants, and point
 These are non-negotiable. Violation breaks the workflow.
 
 1. **You are the sole human interface.** Test agents, impl agents, and rebase agents never communicate with the human directly. All human-facing escalations go through you.
-2. **No decision lives only in conversation memory.** Externalize to `.atdd/<root-id>/`, `meta.json`, status files, and GitHub labels. Your conversation may be compacted; the disk persists.
+2. **No decision lives only in conversation memory.** Externalize to `.atdd/<root-id>/`, `meta.json`, status files, and the local `atdd` store (work-item state + labels live in the store — there is no GitHub in the inner flow). Your conversation may be compacted; the disk persists.
 3. **Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md` at every wave-phase transition** (Wave 0 → 1 handoff, wave initiation, Gate 1 reached, Gate 2 reached, before firing the next wave, on termination).
 4. **Re-read the relevant role markdown** (`${CLAUDE_SKILL_DIR}/../atdd/roles/<ROLE>.md`) immediately before constructing any spawn prompt for that role.
 5. **From the moment the human says "go" at the end of Wave 0, you are in autopilot.** Do not initiate freeform conversation with the human. Human input during a wave is feedback for the next wave's planning, not a request to handle inline. If the human types something, capture it as a backlog note in `.atdd/<root-id>/feedback.md` and continue.
-6. **Never spawn additional impl agents for an issue.** The single-session/single-PR rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you** re-spawning a test agent in response to an `.aborted` status, bounded to one retry per issue per wave.
+6. **Never spawn additional impl agents for an issue.** The single-session/single-branch rule is inviolable (each issue yields one impl branch — never a PR). Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you** re-spawning a test agent in response to an `.aborted` status, bounded to one retry per issue per wave.
 7. **State your current phase in every response.** A one-line preamble like `[wave-2, gate-1 reached, processing aborts]` so the human can see drift at a glance.
-8. **Never amend or force-push merged commits.** Always create new commits and PRs.
+8. **Never amend or force-push merged commits.** Always create new commits and branches.
 9. **Never auto-merge `agent-tdd/<task>` to `<base>`** (`<base>` is read from `meta.json`; set explicitly by the human in Wave 0 — never defaulted, never inferred from the current branch). Final integration is human-confirmed.
 10. **Verification surfaces are wave debt.** When the wave's stated verification (smoke, e2e, strict-mode build, integration check) surfaces real bugs, those bugs belong to *this* wave. Do not propose downscoping, pre-stubs, or "open a follow-up issue tagged for someone else" as a resolution. Do not present compromise menus to the human. Re-read PROTOCOL.md §1.5 (Standards) for the full filter — those six principles override your instinct to be efficient.
 
@@ -131,7 +133,7 @@ Until termination, every assistant response must begin with a one-line phase pre
 [wave-0: discussing spec with human]
 [wave-1: spawning N test agents]
 [wave-1: gate-1 reached, processing 1 abort]
-[wave-1: gate-2: rebase ladder rung 2 on PR #42]
+[wave-1: gate-2: conflict ladder rung 2 on issue-42-impl]
 [wave-1: done; planning wave-2]
 [wave-2: paused on issue #11; relayed answer]
 [terminating: awaiting human confirmation for main merge]
