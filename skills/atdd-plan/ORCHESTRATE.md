@@ -142,10 +142,10 @@ window by `cohort.json:members[<sub_ref>].window_id`.
 ### 2.2 State dir (under the INVOKING repo's working tree)
 
 The repo the human launched `/agent-tdd:fix` from — already manifest-bearing and
-gitignored (`.agent-tdd/.gitignore`).
+gitignored (`.atdd/.gitignore`).
 
 ```
-<invoking-repo>/.agent-tdd/notes-<id>/
+<invoking-repo>/.atdd/notes-<id>/
 ├── meta.json                       (orchestration config; §2.3)
 ├── orch.log                        (append-only breadcrumb — compaction recovery)
 └── cohort-<RI#>/
@@ -189,7 +189,7 @@ gitignored (`.agent-tdd/.gitignore`).
 
 Update `current_rootissue` (and `base_by_repo`) with an atomic jq edit:
 ```bash
-M=.agent-tdd/<notes-id>/meta.json
+M=.atdd/<notes-id>/meta.json
 jq --arg ri "<owner/repo#N>" '.current_rootissue=$ri' "$M" > "$M.tmp" && mv "$M.tmp" "$M"
 ```
 
@@ -262,7 +262,7 @@ Input/Output:
    available RootIssues. For each, ask the human its base branch explicitly (never
    default `main`), and record it:
    ```bash
-   M=.agent-tdd/<notes-id>/meta.json   # (after orch-init in step 4)
+   M=.atdd/<notes-id>/meta.json   # (after orch-init in step 4)
    jq --arg r "<owner/repo>" --arg b "<base>" '.base_by_repo[$r]=$b' "$M" > "$M.tmp" && mv "$M.tmp" "$M"
    ```
 3. **Present the plan in director terms and ask once:** *"Planning is captured. N
@@ -311,7 +311,7 @@ Re-read this file at the top of each iteration.
      ```bash
      bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/spawn-root.sh \
        <notes-id> <RI-ref> <sub-ref> <clone-path> "${CLAUDE_SKILL_DIR}/../.." \
-       "$(jq -r .notes_tmux_session .agent-tdd/<notes-id>/meta.json)" \
+       "$(jq -r .notes_tmux_session .atdd/<notes-id>/meta.json)" \
        <base-from-base_by_repo> <gh-account> <slug>
      ```
      `spawn-root.sh` writes the registry entry **before** the side-effect, launches
@@ -319,7 +319,7 @@ Re-read this file at the top of each iteration.
 4. **Wait — idle.** Issue the watcher once, in the background (zero turns/tokens):
    ```bash
    bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
-     .agent-tdd/<notes-id>/cohort-<RI#>/cohort.json
+     .atdd/<notes-id>/cohort-<RI#>/cohort.json
    ```
    (one Bash call with `run_in_background=true`.)
 5. **Dispatch on the `EVENT=` line** (§4).
@@ -372,7 +372,7 @@ Dispatch on `STATE` of a `root-event`:
 Before re-issuing the watcher, record what you consumed (so it won't re-fire on the
 same event):
 ```bash
-C=.agent-tdd/<notes-id>/cohort-<RI#>/cohort.json
+C=.atdd/<notes-id>/cohort-<RI#>/cohort.json
 jq --arg s "<sub_ref>" --argjson n <SEQ> '.members[$s].last_consumed_seq=$n' "$C" > "$C.tmp" && mv "$C.tmp" "$C"
 ```
 To answer a paused Root, **poll for its prompt first** (the Root decided to pause, but
@@ -458,7 +458,7 @@ When the cohort converges (`EVENT=cohort-ready`, or all members settled):
    gh pr merge <pr_url> --squash   # under the run's single gh account
    ```
 4. After a merge lands, finalize that Root: read its `meta.json` (glob
-   `<repo_path>/.agent-tdd/*/meta.json` for the one whose `sub_ref`/`notes_id` match)
+   `<repo_path>/.atdd/*/meta.json` for the one whose `sub_ref`/`notes_id` match)
    to get its `root_id` + `task`, then:
    ```bash
    ( cd <repo_path> && bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/terminate-root.sh <root_id> <task> )
@@ -476,7 +476,7 @@ Your session may be auto-compacted mid-orchestration. The disk + the local atdd 
 durable; the conversation is not. If you have lost track (you cannot write the §1.10 preamble):
 
 1. Re-read this file (`ORCHESTRATE.md`) and `CORE.md`.
-2. Re-read `.agent-tdd/<notes-id>/meta.json` → `current_rootissue`, `base_by_repo`,
+2. Re-read `.atdd/<notes-id>/meta.json` → `current_rootissue`, `base_by_repo`,
    tmux ids, cap.
 3. Re-read `cohort-<current-RI#>/cohort.json`; for each member, re-read its
    `signal_path` and check tmux liveness.
@@ -485,7 +485,7 @@ durable; the conversation is not. If you have lost track (you cannot write the �
    - `topology-available.sh` + `atdd issue view <sub_ref>` (read `.state`) — which
      SubIssues are still open vs already closed (= done).
    - For each open SubIssue of `current_rootissue`, glob each member repo's
-     `<repo_path>/.agent-tdd/*/meta.json` for `orchestrated==true && notes_id==<mine>
+     `<repo_path>/.atdd/*/meta.json` for `orchestrated==true && notes_id==<mine>
      && sub_ref==<that>` — this **rediscovers a Root the registry lost** (e.g. a crash
      mid-spawn) so it is never invisible.
    - SubIssues marked `running` in the registry but already closed in the store → mark

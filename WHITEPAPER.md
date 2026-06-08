@@ -134,10 +134,10 @@ The human only watches the `roots` session. Workspace sessions can be noisy with
 
 ### 3.2 Filesystem Layout
 
-State and per-agent worktrees live under `.agent-tdd/`, **namespaced by Root ID**. The directory must be gitignored.
+State and per-agent worktrees live under `.atdd/`, **namespaced by Root ID**. The directory must be gitignored.
 
 ```
-<repo>/.agent-tdd/                                ← gitignored (contents: *)
+<repo>/.atdd/                                ← gitignored (contents: *)
 ├── .gitignore                                    (single line: *)
 ├── root-1/
 │   ├── meta.json                                 (root config: task slug, base branch, max wave count, wave size cap)
@@ -157,9 +157,9 @@ State and per-agent worktrees live under `.agent-tdd/`, **namespaced by Root ID*
     └── ...
 ```
 
-**Worktree lifecycle.** Root creates a worktree for each test agent at wave-spawn time (`git worktree add .agent-tdd/root-1/worktrees/issue-3-tests -b issue-3-tests <root-branch>`). The test agent creates the impl worktree before spawning its impl agent. On terminal status, Root prunes both worktrees (`git worktree remove --force ...`).
+**Worktree lifecycle.** Root creates a worktree for each test agent at wave-spawn time (`git worktree add .atdd/root-1/worktrees/issue-3-tests -b issue-3-tests <root-branch>`). The test agent creates the impl worktree before spawning its impl agent. On terminal status, Root prunes both worktrees (`git worktree remove --force ...`).
 
-**Path discipline for status writes.** Worktrees see their own working tree, not the main repo's. Agents write status files to the **absolute path** of `.agent-tdd/<root-id>/wave-N/status/`, which Root passes in their initial prompt. Do not rely on relative paths — the gitignored state directory only exists in the main repo's working tree.
+**Path discipline for status writes.** Worktrees see their own working tree, not the main repo's. Agents write status files to the **absolute path** of `.atdd/<root-id>/wave-N/status/`, which Root passes in their initial prompt. Do not rely on relative paths — the gitignored state directory only exists in the main repo's working tree.
 
 **Status file contents (atomic-write JSON; write to `.tmp`, then `mv` to final name).** Terminal:
 
@@ -182,7 +182,7 @@ Paused (transient):
   "state": "paused",
   "from": "test-agent",                  // test-agent | impl-agent
   "question": "The issue mentions 'auth middleware' but the codebase has both src/auth/ and src/middleware/auth/. Which do you mean?",
-  "context_path": "/abs/path/.agent-tdd/root-1/worktrees/issue-11-tests"
+  "context_path": "/abs/path/.atdd/root-1/worktrees/issue-11-tests"
 }
 ```
 
@@ -222,7 +222,7 @@ When the entire workflow terminates, the Root branch merges to its configured ba
 2. Human launches `claude` in that window — this is the Root Agent.
 3. Human and Root discuss the feature/bug at spec level.
 4. Root creates the integration branch: `agent-tdd/<root-task>` off `main` (or off a configurable base).
-5. Root initializes `.agent-tdd/<root-id>/meta.json` (task slug, base branch, max wave count, wave size cap).
+5. Root initializes `.atdd/<root-id>/meta.json` (task slug, base branch, max wave count, wave size cap).
 6. Human says "go" → Root transitions into autopilot orchestrator mode. From this point, the human only intervenes when Root explicitly raises hand.
 
 ### 4.2 Wave Initiation
@@ -237,7 +237,7 @@ For each wave, Root performs:
    - `agent-tdd:active-wave-<N>`
    - `agent-tdd:root-<id>` *(present from issue creation, used for filtering)*
 4. Creates the per-Root workspace session if it doesn't exist (e.g. `ws-root-1`).
-5. Creates per-issue git worktrees under `.agent-tdd/<root-id>/worktrees/issue-<N>-tests/`.
+5. Creates per-issue git worktrees under `.atdd/<root-id>/worktrees/issue-<N>-tests/`.
 6. Spawns N test-agent windows in that session, each named `issue-<X>`, each pointed at one issue and at its worktree.
 7. Issues a single **background Bash** event-watcher (see §6.1) — wakes Root on either terminal-threshold or first paused agent.
 
@@ -394,7 +394,7 @@ Every agent writes status atomically (`.tmp` → `mv`). Terminal states (`.done`
 
 ```bash
 # Inside the impl agent's final shell command
-status_dir=/abs/path/.agent-tdd/root-1/wave-1/status
+status_dir=/abs/path/.atdd/root-1/wave-1/status
 cat > "$status_dir/issue-3.done.tmp" <<EOF
 {"issue": 3, "outcome": "success", "pr_url": "...", "head_sha": "...", "ci_status": "passing"}
 EOF
@@ -406,7 +406,7 @@ Root waits using a **single background Bash event-watcher** that exits on either
 ```bash
 # Issued ONCE via Bash(run_in_background=true)
 expected=3
-status_dir=.agent-tdd/root-1/wave-1/status
+status_dir=.atdd/root-1/wave-1/status
 while true; do
   terminal=$(ls "$status_dir" 2>/dev/null | grep -E '\.(done|failed|aborted)$' | wc -l)
   paused=$(ls "$status_dir" 2>/dev/null | grep '\.paused$' | head -1)
@@ -452,7 +452,7 @@ Root drives child agents by sending keystrokes into their tmux windows. Used for
 tmux send-keys -t ws-root-1:issue-11 'Use src/auth/middleware.ts — that is the canonical path.' Enter
 
 # Resume the agent after clearing the paused signal
-rm .agent-tdd/root-1/wave-1/status/issue-11.paused
+rm .atdd/root-1/wave-1/status/issue-11.paused
 ```
 
 Re-spawning is a fresh `claude` invocation in the same window (after `tmux kill-window` + `tmux new-window`) with updated context including the abort feedback.
@@ -507,7 +507,7 @@ These do **not** inject keystrokes into Root's input buffer — they manipulate 
 | **Impl agent aborted** (test malformed) | Status `.aborted`; no PR. Root re-spawns test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed`, escalate to human. |
 | **Test agent crash** | Status file missing; wave's background watcher does not advance. Root's dashboard reflects "stuck" once a heartbeat threshold passes. Human notices and intervenes. |
 | **Wave gates on completion, not success** | A partially-failed wave still triggers wave-merged + Wave N+1 (provided merged PRs exist and any rebase escalations are resolved). |
-| **Human-induced failure** (e.g. human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed (`touch .agent-tdd/<root-id>/wave-N/status/issue-X.failed`). |
+| **Human-induced failure** (e.g. human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed (`touch .atdd/<root-id>/wave-N/status/issue-X.failed`). |
 | **Rebase-blocked / rebase-regression** | See §4.7 escalation ladder. |
 
 ---
@@ -617,8 +617,8 @@ The operational contract — the orchestration loop, the watcher event protocol,
 
 ```bash
 # In Root's window (main repo working tree, on main):
-mkdir -p .agent-tdd/root-1
-echo '*' > .agent-tdd/.gitignore
+mkdir -p .atdd/root-1
+echo '*' > .atdd/.gitignore
 git checkout -b agent-tdd/<root-task> main
 git push -u origin agent-tdd/<root-task>
 # Root writes meta.json:
@@ -629,12 +629,12 @@ git push -u origin agent-tdd/<root-task>
 
 ```bash
 # Create the worktree
-git worktree add .agent-tdd/root-1/worktrees/issue-3-tests \
+git worktree add .atdd/root-1/worktrees/issue-3-tests \
   -b issue-3-tests agent-tdd/<root-task>
 
 # Create the tmux window in the workspace, anchored to the worktree
 tmux new-window -t ws-root-1: -n issue-3 \
-  -c "$PWD/.agent-tdd/root-1/worktrees/issue-3-tests"
+  -c "$PWD/.atdd/root-1/worktrees/issue-3-tests"
 tmux send-keys -t ws-root-1:issue-3 'claude' Enter
 
 # Wait for prompt (more robust than a fixed sleep)
@@ -644,7 +644,7 @@ tmux send-keys -t ws-root-1:issue-3 \
 'You are a test agent for issue #3 under root-1, wave-1.
 Read the issue: gh issue view 3
 If the issue body has a "## Needs Clarification" section, write
-  /abs/path/.agent-tdd/root-1/wave-1/status/issue-3.paused
+  /abs/path/.atdd/root-1/wave-1/status/issue-3.paused
 with the question and wait for an answer (delivered via tmux send-keys).
 Otherwise: build red tests on this worktree (branch issue-3-tests).
 Push the branch: git push -u origin issue-3-tests
@@ -658,12 +658,12 @@ Self-close. (Status file is the impl agent'"'"'s job; you only write
 
 ```bash
 # Create the impl worktree (stacked off test branch)
-git worktree add /abs/path/.agent-tdd/root-1/worktrees/issue-3-impl \
+git worktree add /abs/path/.atdd/root-1/worktrees/issue-3-impl \
   -b issue-3-impl issue-3-tests
 
 # Spawn the agent window
 tmux new-window -t ws-root-1: -n issue-3-PR \
-  -c /abs/path/.agent-tdd/root-1/worktrees/issue-3-impl
+  -c /abs/path/.atdd/root-1/worktrees/issue-3-impl
 
 tmux send-keys -t ws-root-1:issue-3-PR \
 "claude -p 'You are an impl agent for issue #3, root-1, wave-1.
@@ -675,7 +675,7 @@ Effort heuristic:
   - 5+ varied attempts, still red, contract looks valid -> gave-up.
   - Tests green + CI green -> success.
 After opening PR: gh pr checks --watch <pr#>
-Write status to /abs/path/.agent-tdd/root-1/wave-1/status/issue-3.{done,failed,aborted}
+Write status to /abs/path/.atdd/root-1/wave-1/status/issue-3.{done,failed,aborted}
 (atomic: .tmp + mv).
 If aborted, do NOT open a PR.' \
   --dangerously-skip-permissions ; tmux kill-window" Enter
@@ -686,7 +686,7 @@ If aborted, do NOT open a PR.' \
 ```bash
 # Bash(run_in_background=true)
 expected=3
-status_dir=.agent-tdd/root-1/wave-1/status
+status_dir=.atdd/root-1/wave-1/status
 while true; do
   terminal=$(ls "$status_dir" 2>/dev/null | grep -E '\.(done|failed|aborted)$' | wc -l)
   paused=$(ls "$status_dir" 2>/dev/null | grep '\.paused$' | head -1)
@@ -718,8 +718,8 @@ notify-send "Agent TDD" "Wave 1 done — review backlog"
 ### Root prunes worktrees on terminal
 
 ```bash
-git worktree remove --force .agent-tdd/root-1/worktrees/issue-3-tests
-git worktree remove --force .agent-tdd/root-1/worktrees/issue-3-impl
+git worktree remove --force .atdd/root-1/worktrees/issue-3-tests
+git worktree remove --force .atdd/root-1/worktrees/issue-3-impl
 ```
 
 ---

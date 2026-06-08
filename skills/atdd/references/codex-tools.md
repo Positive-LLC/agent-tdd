@@ -62,5 +62,5 @@ The spawn recipes resolve the main repo from any worktree with read-only git:
 GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
 ```
 
-`--git-common-dir` always points at `<main-repo>/.git`, so `.agent-tdd/<root-id>/`
+`--git-common-dir` always points at `<main-repo>/.git`, so `.atdd/<root-id>/`
 lookups succeed even from inside a linked worktree.

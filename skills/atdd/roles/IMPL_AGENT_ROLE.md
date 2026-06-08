@@ -34,7 +34,7 @@ Your invocation prompt is constructed by concatenating this role markdown with a
 - `ISSUE_NUM` — work-item number (issue ref)
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
-- `STATUS_DIR` — absolute path of `.agent-tdd/<root-id>/wave-<N>/status/`
+- `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
 - `WORKTREE_DIR` — absolute path of your worktree (your CWD)
 - `TEST_BRANCH` — `issue-<N>-tests` (you are stacked on this)
 - `IMPL_BRANCH` — `issue-<N>-impl` (your branch)

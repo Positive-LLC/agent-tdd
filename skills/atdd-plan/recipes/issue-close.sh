@@ -34,7 +34,7 @@ case "$REASON" in
 esac
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
-MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
+MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
 [[ -f "$MANIFEST" ]] || die "manifest not found (run manifest-ensure.sh first)"
 ROOT_LABEL="$(jq -er '.labels.root' "$MANIFEST")"
 SUB_LABEL="$(jq -er '.labels.sub' "$MANIFEST")"

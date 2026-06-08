@@ -28,7 +28,7 @@ Root constructs your initial prompt by concatenating this role markdown with a `
 - `ISSUE_NUM` — work-item number (issue ref, e.g. `3`)
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
-- `STATUS_DIR` — absolute path of `.agent-tdd/<root-id>/wave-<N>/status/`
+- `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
 - `WORKTREE_DIR` — absolute path of your worktree (your CWD when launched)
 - `TEST_BRANCH` — `issue-<N>-tests`
 - `PLUGIN_DIR` — absolute path of the agent-tdd plugin (so you can call `${PLUGIN_DIR}/recipes/spawn-impl-agent.sh`)
@@ -170,7 +170,7 @@ If Root's answer is itself ambiguous, you may pause once more with a sharper fol
   "state": "paused",
   "from": "test-agent",
   "question": "...",
-  "context_path": "/abs/path/.agent-tdd/root-1/worktrees/issue-3-tests"
+  "context_path": "/abs/path/.atdd/root-1/worktrees/issue-3-tests"
 }
 ```
 

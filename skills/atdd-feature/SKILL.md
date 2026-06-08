@@ -54,7 +54,7 @@ active head).
 
 Follow CORE.md §2 immediately:
 
-1. Check whether `.agent-tdd/manifest.json` already exists at the repo root:
+1. Check whether `.atdd/manifest.json` already exists at the repo root:
    - **If yes**, run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh`
      with no args (it just prints the JSON).
    - **If no**, ask the human (one short message) for the home repo

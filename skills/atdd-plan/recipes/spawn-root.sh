@@ -60,7 +60,7 @@ SUB_SLUG="$(printf '%s-%s' "${REPO_NAME}" "${SUB_NUM}" | tr '[:upper:]' '[:lower
 # --- orchestrator state dir (the INVOKING repo's working tree) ---
 ORCH_REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
   || die "spawn-root.sh must run from inside the orchestrator's git repo"
-NOTES_DIR="${ORCH_REPO_ROOT}/.agent-tdd/${NOTES_ID}"
+NOTES_DIR="${ORCH_REPO_ROOT}/.atdd/${NOTES_ID}"
 [[ -d "${NOTES_DIR}" ]] || die "no orchestration state dir at ${NOTES_DIR} (run orch-init.sh first)"
 COHORT_DIR="${NOTES_DIR}/cohort-${RI_NUM}"
 SUB_DIR="${COHORT_DIR}/${SUB_SLUG}"

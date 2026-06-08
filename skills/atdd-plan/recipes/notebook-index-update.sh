@@ -14,7 +14,7 @@ command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
 command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
-MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
+MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
 [[ -f "$MANIFEST" ]] || die "manifest not found (run manifest-ensure.sh first)"
 
 HOME_REPO="$(jq -er '.home_repo' "$MANIFEST")"

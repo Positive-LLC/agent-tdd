@@ -4,7 +4,7 @@
 # Usage:  spawn-impl-agent.sh <root-id> <wave> <issue-num> <plugin-dir> <workspace-session> <root-task>
 #
 # Effects:
-#   - Creates the impl worktree at .agent-tdd/<root-id>/worktrees/issue-<N>-impl
+#   - Creates the impl worktree at .atdd/<root-id>/worktrees/issue-<N>-impl
 #     on a new branch issue-<N>-impl stacked off issue-<N>-tests.
 #   - Opens a new tmux window <workspace-session>:issue-<N>-PR.
 #   - Starts `tmux pipe-pane` writing pane output to logs/issue-<N>/tmux.pane
@@ -46,7 +46,7 @@ ROOT_TASK="$6"
 # `--git-common-dir` (which always points at <main-repo>/.git) to recover the
 # main worktree regardless of which worktree is calling.
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREE_DIR="${STATE_DIR}/worktrees/issue-${ISSUE_NUM}-impl"
 TEST_BRANCH="issue-${ISSUE_NUM}-tests"

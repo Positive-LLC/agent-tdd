@@ -17,7 +17,7 @@ ROOT_N="$1"
 [[ "$ROOT_N" =~ ^[0-9]+$ ]] || die "<root#> must be a number (got: $ROOT_N)"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
-MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
+MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
 [[ -f "$MANIFEST" ]] || die "manifest not found"
 HOME_REPO="$(jq -er '.home_repo' "$MANIFEST")"
 TARGET_REF="${HOME_REPO}#${ROOT_N}"

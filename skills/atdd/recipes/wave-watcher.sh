@@ -4,7 +4,7 @@
 # Usage:  wave-watcher.sh <root-id> <wave> <expected-terminal-count>
 #
 # Behavior:
-#   - Polls .agent-tdd/<root-id>/wave-<N>/status/ every 10 seconds.
+#   - Polls .atdd/<root-id>/wave-<N>/status/ every 10 seconds.
 #   - Exits 0 with `EVENT=terminal` to stdout when terminal count >= expected.
 #   - Exits 0 with `EVENT=paused FILE=<path>` to stdout if any .paused appears.
 #   - Exits 0 with `EVENT=timeout` to stdout when WAVE_WATCHER_TIMEOUT_SEC
@@ -35,11 +35,11 @@ TIMEOUT_SEC="${WAVE_WATCHER_TIMEOUT_SEC:-1800}"
 DEADLINE=$(( $(date +%s) + TIMEOUT_SEC ))
 
 # Recover the main repo's working tree regardless of caller's cwd. Root runs
-# in its own worktree (.agent-tdd/<root-id>/root/); --show-toplevel would
+# in its own worktree (.atdd/<root-id>/root/); --show-toplevel would
 # return that path. --git-common-dir always points at <main-repo>/.git.
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)"
 [[ -n "${REPO_ROOT}" ]] || REPO_ROOT="$(pwd)"
-STATUS_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}/wave-${WAVE}/status"
+STATUS_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}/wave-${WAVE}/status"
 mkdir -p "${STATUS_DIR}"
 
 while true; do

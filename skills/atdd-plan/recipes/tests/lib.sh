@@ -36,7 +36,7 @@ POISON
   git -C "$WORK" init -q
   git -C "$WORK" config user.email t@example.com
   git -C "$WORK" config user.name test
-  mkdir -p "${WORK}/.agent-tdd"
+  mkdir -p "${WORK}/.atdd"
   ( cd "$WORK" && "${RECIPES_DIR}/manifest-ensure.sh" acme/home >/dev/null ) \
     || { echo "FATAL: manifest bootstrap failed"; exit 1; }
 }

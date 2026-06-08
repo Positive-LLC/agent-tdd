@@ -4,7 +4,7 @@
 # Usage:  spawn-test-agent.sh <root-id> <wave> <issue-num> <plugin-dir> <workspace-session> <root-task>
 #
 # Effects:
-#   - Creates the test worktree at .agent-tdd/<root-id>/worktrees/issue-<N>-tests
+#   - Creates the test worktree at .atdd/<root-id>/worktrees/issue-<N>-tests
 #     on a new branch issue-<N>-tests off agent-tdd/<root-task>.
 #   - Creates the workspace tmux session if missing.
 #   - Opens a new tmux window <workspace-session>:issue-<N> anchored at the worktree.
@@ -43,11 +43,11 @@ WORKSPACE_SESSION="$5"
 ROOT_TASK="$6"
 
 # Recover the main repo's working tree regardless of caller's cwd. Root now
-# runs in its own worktree (.agent-tdd/<root-id>/root/), so --show-toplevel
-# would return that worktree's path, breaking the ${REPO_ROOT}/.agent-tdd/...
+# runs in its own worktree (.atdd/<root-id>/root/), so --show-toplevel
+# would return that worktree's path, breaking the ${REPO_ROOT}/.atdd/...
 # join. --git-common-dir always points at <main-repo>/.git from any worktree.
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREE_DIR="${STATE_DIR}/worktrees/issue-${ISSUE_NUM}-tests"
 TEST_BRANCH="issue-${ISSUE_NUM}-tests"

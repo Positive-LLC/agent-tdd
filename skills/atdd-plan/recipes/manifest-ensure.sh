@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# manifest-ensure.sh — read or create ${REPO_ROOT}/.agent-tdd/manifest.json.
+# manifest-ensure.sh — read or create ${REPO_ROOT}/.atdd/manifest.json.
 #
 # Phase 1: the GitHubProject is gone. The manifest now records only the home
 # repo, the NotebookIssue (in the local atdd store), the label names, and the
@@ -23,7 +23,7 @@ command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || die "not inside a git repo — manifest is per-repo, run from the repo you're planning in"
-MANIFEST_DIR="${REPO_ROOT}/.agent-tdd"
+MANIFEST_DIR="${REPO_ROOT}/.atdd"
 MANIFEST="${MANIFEST_DIR}/manifest.json"
 
 # --- member-repo registry subcommands (orchestration mode) -------------------

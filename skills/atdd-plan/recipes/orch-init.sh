@@ -17,12 +17,12 @@
 #
 # Effects (all under the INVOKING repo's working tree — the repo the human
 # launched /agent-tdd:fix from, which already carries manifest.json and a
-# `.agent-tdd/.gitignore`):
+# `.atdd/.gitignore`):
 #   - Atomically claims the next free notes-id (notes-1, notes-2, ...) via
 #     `mkdir` (race-safe), sibling to any root-N dirs in the same repo.
 #   - Captures the orchestrator's own tmux session + stable window id, anchored
 #     to $TMUX_PANE (defeats client focus drift — same rationale as init-root.sh).
-#   - Writes .agent-tdd/<notes-id>/meta.json (the orchestration registry; see
+#   - Writes .atdd/<notes-id>/meta.json (the orchestration registry; see
 #     ORCHESTRATE.md §2). base_by_repo / member_repo_paths / current_rootissue /
 #     roots start empty and are filled by the orchestration loop.
 #
@@ -59,12 +59,12 @@ log "captured tmux session: ${ORCH_TMUX_SESSION}, window id: ${ORCH_TMUX_WINDOW_
 # --- repo + manifest sanity ---
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
+MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
 [[ -f "${MANIFEST}" ]] || die "no manifest at ${MANIFEST} — run planning (/agent-tdd:fix) first so manifest-ensure.sh creates it"
 
-# --- ensure .agent-tdd + its .gitignore ---
-mkdir -p "${REPO_ROOT}/.agent-tdd"
-GITIGNORE="${REPO_ROOT}/.agent-tdd/.gitignore"
+# --- ensure .atdd + its .gitignore ---
+mkdir -p "${REPO_ROOT}/.atdd"
+GITIGNORE="${REPO_ROOT}/.atdd/.gitignore"
 if [[ ! -f "${GITIGNORE}" ]]; then
   printf '*\n!.gitignore\n!manifest.json\n' > "${GITIGNORE}"
 fi
@@ -73,14 +73,14 @@ fi
 NOTES_ID=""
 STATE_DIR=""
 for n in $(seq 1 32); do
-  candidate="${REPO_ROOT}/.agent-tdd/notes-${n}"
+  candidate="${REPO_ROOT}/.atdd/notes-${n}"
   if mkdir "${candidate}" 2>/dev/null; then
     NOTES_ID="notes-${n}"
     STATE_DIR="${candidate}"
     break
   fi
 done
-[[ -n "${NOTES_ID}" ]] || die "could not claim a notes-id within 32 attempts; clean up stale .agent-tdd/notes-* dirs"
+[[ -n "${NOTES_ID}" ]] || die "could not claim a notes-id within 32 attempts; clean up stale .atdd/notes-* dirs"
 log "claimed orchestration id: ${NOTES_ID}"
 
 # --- carry the manifest's home_repo + notebook for convenience ---

@@ -4,7 +4,7 @@
 # Usage:  terminate-root.sh <root-id> <root-task>
 #
 # Behavior (idempotent — safe to re-run after partial failure):
-#   1. Removes Root's private worktree at .agent-tdd/<root-id>/root/.
+#   1. Removes Root's private worktree at .atdd/<root-id>/root/.
 #      MUST happen before branch deletion (git refuses to delete a branch that
 #      is checked out in any worktree).
 #   2. Deletes the integration branch agent-tdd/<task> on origin (if present).
@@ -14,9 +14,9 @@
 #      windows from terminated test/impl/rebase agents linger there until
 #      explicitly killed.
 #
-# Does NOT delete .agent-tdd/<root-id>/ itself — the audit trail (status files,
+# Does NOT delete .atdd/<root-id>/ itself — the audit trail (status files,
 # logs, meta.json, feedback.md) is preserved for forensics. The human can
-# `rm -rf .agent-tdd/<root-id>/` once they don't need it.
+# `rm -rf .atdd/<root-id>/` once they don't need it.
 #
 # All progress messages go to stderr.
 
@@ -37,7 +37,7 @@ ROOT_TASK="$2"
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
   || die "could not resolve REPO_ROOT — are you inside the repo?"
 
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 ROOT_WORKTREE="${STATE_DIR}/root"
 INTEGRATION_BRANCH="agent-tdd/${ROOT_TASK}"
 

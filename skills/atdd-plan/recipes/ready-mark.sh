@@ -18,7 +18,7 @@ SUB_REF="$1"
   || die "sub-ref must look like <owner>/<repo>#<N> (got: $SUB_REF)"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
-MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
+MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
 [[ -f "$MANIFEST" ]] || die "manifest not found (run manifest-ensure.sh first)"
 SUB_LABEL="$(jq -er '.labels.sub' "$MANIFEST")"
 READY_LABEL="$(jq -er '.labels.ready' "$MANIFEST")"

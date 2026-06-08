@@ -4,7 +4,7 @@ This document is the canonical, agent-actionable spec of the Agent TDD workflow.
 
 If WHITEPAPER.md and this file disagree, this file wins (the whitepaper is the design rationale; this is the operational spec).
 
-> **Standing instruction for Root:** the conversation is ephemeral, the disk is durable. No decision lives only in your conversation memory. Externalize state to `.agent-tdd/<root-id>/` and to the local `atdd` store at every step. Re-derive working state from disk + the local `atdd` store at every phase boundary.
+> **Standing instruction for Root:** the conversation is ephemeral, the disk is durable. No decision lives only in your conversation memory. Externalize state to `.atdd/<root-id>/` and to the local `atdd` store at every step. Re-derive working state from disk + the local `atdd` store at every phase boundary.
 
 ---
 
@@ -17,7 +17,7 @@ You are one of two layers in Agent TDD v0.10.0+. An upstream **Notes Agent** (`/
 Hard rules for the entire workflow:
 
 - **You are the sole human interface.** Test agents, impl agents, and rebase agents never communicate with the human directly. Every human-facing escalation goes through you.
-- **No decision lives only in conversation memory.** Externalize to `.agent-tdd/<root-id>/`, `meta.json`, status files, and the local `atdd` store (labels live there now). Your conversation may be compacted; the disk persists.
+- **No decision lives only in conversation memory.** Externalize to `.atdd/<root-id>/`, `meta.json`, status files, and the local `atdd` store (labels live there now). Your conversation may be compacted; the disk persists.
 - **Re-read this file (`${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`) at every wave-phase transition** (Wave initiation, Gate 1 reached, Gate 2 reached, before spawning a new wave).
 - **Re-read role markdowns** (`${CLAUDE_SKILL_DIR}/../atdd/roles/*.md`) immediately before constructing a spawn prompt for that role.
 - **Human input during a wave is feedback for the next wave's planning, not a request to handle inline.** If the human types something while a wave is running, capture it as a backlog note for wave-housekeeping (§6); do not interrupt the wave.
@@ -36,7 +36,7 @@ The bar these principles defend: **the test surface this workflow produces must 
 
 **P2 — Never weaken the contract to make a wave pass.** Pre-stubs, scope reductions, downgrading strict to lax, narrowing the set of leaves/files/modules under verification, or any change that makes failing tests pass without addressing root cause is **forbidden** as a resolution path. If verification surfaces real bugs (including bugs in code outside the issue's nominal subject), those bugs are in-scope until *proven impossible* to fix within the wave.
 
-**P3 — Dig before you defer.** Before proposing that anything be deferred, opened as a new issue, or punted to another owner, you must (a) reproduce the failure locally in your Root worktree, (b) trace it to root cause, not symptom, and (c) document — in writing in `.agent-tdd/<root-id>/feedback.md` — why it cannot be addressed within this wave's scope. "I don't own that file" is not a reason. "This requires a coordinated multi-repo migration that has its own approval gate" is.
+**P3 — Dig before you defer.** Before proposing that anything be deferred, opened as a new issue, or punted to another owner, you must (a) reproduce the failure locally in your Root worktree, (b) trace it to root cause, not symptom, and (c) document — in writing in `.atdd/<root-id>/feedback.md` — why it cannot be addressed within this wave's scope. "I don't own that file" is not a reason. "This requires a coordinated multi-repo migration that has its own approval gate" is.
 
 **P4 — Don't present compromise menus.** When you are tempted to write to the human "Option A: accept as-is. Option B: defer. Option C: downscope." — **stop.** Pick the action that goes deeper, take it, and report after. The human's only decision points are Wave 0 (scope and base) and termination (final integration). Not "which flavor of giving up should we choose."
 
@@ -63,8 +63,8 @@ You do NOT pollute the dashboard session with child windows. Workspace sessions 
 **How to target your dashboard window.** At the top of every wave (and any time you construct a `tmux rename-window` or `set-window-option` for the dashboard), resolve the **window ID** from disk and use it directly as the `-t` target:
 
 ```bash
-ROOT_TMUX_SESSION="$(jq -r '.root_tmux_session'   .agent-tdd/<root-id>/meta.json)"
-ROOT_TMUX_WINDOW="$(jq  -r '.root_tmux_window_id' .agent-tdd/<root-id>/meta.json)"
+ROOT_TMUX_SESSION="$(jq -r '.root_tmux_session'   .atdd/<root-id>/meta.json)"
+ROOT_TMUX_WINDOW="$(jq  -r '.root_tmux_window_id' .atdd/<root-id>/meta.json)"
 
 # rename / set-window-option → use the window ID
 tmux rename-window     -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> (<count> active)'
@@ -80,10 +80,10 @@ Never assume the literal string `roots` for the session.
 
 ### 2.2 Filesystem Layout
 
-State and worktrees live under `.agent-tdd/`, namespaced by Root ID. The directory is gitignored (the repo's `.gitignore` contains `.agent-tdd/`).
+State and worktrees live under `.atdd/`, namespaced by Root ID. The directory is gitignored (the repo's `.gitignore` contains `.atdd/`).
 
 ```
-<repo>/.agent-tdd/
+<repo>/.atdd/
 └── root-<id>/
     ├── meta.json                            (root config; see §2.4)
     ├── wave-1/
@@ -102,9 +102,9 @@ State and worktrees live under `.agent-tdd/`, namespaced by Root ID. The directo
 
 ### 2.3 Path discipline
 
-**Use absolute paths in agent prompts and status writes.** Every Root and child agent operates inside a git worktree, not the main repo working tree. `.agent-tdd/<root-id>/` lives in the main repo's working tree (gitignored via `.agent-tdd/.gitignore`). When you spawn a child agent, pass the absolute path of `.agent-tdd/<root-id>/wave-N/status/` in its initial prompt.
+**Use absolute paths in agent prompts and status writes.** Every Root and child agent operates inside a git worktree, not the main repo working tree. `.atdd/<root-id>/` lives in the main repo's working tree (gitignored via `.atdd/.gitignore`). When you spawn a child agent, pass the absolute path of `.atdd/<root-id>/wave-N/status/` in its initial prompt.
 
-**Your cwd is `.agent-tdd/<root-id>/root/`** from Wave 0 onward — that is your private worktree on `agent-tdd/<task>`. Use `git -C "${REPO_ROOT}"` to operate on the main repo's `.git` (e.g. for `worktree add`, branch ops). The main worktree's HEAD is whatever the human left it on; never mutate it.
+**Your cwd is `.atdd/<root-id>/root/`** from Wave 0 onward — that is your private worktree on `agent-tdd/<task>`. Use `git -C "${REPO_ROOT}"` to operate on the main repo's `.git` (e.g. for `worktree add`, branch ops). The main worktree's HEAD is whatever the human left it on; never mutate it.
 
 Compute the absolute paths once at the top of each phase:
 
@@ -114,7 +114,7 @@ WAVE=1           # current wave number
 # Recover REPO_ROOT regardless of cwd. --git-common-dir always points at
 # <main-repo>/.git, even from a worktree (Root or child).
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 ROOT_WORKTREE="${STATE_DIR}/root"
 STATUS_DIR="${STATE_DIR}/wave-${WAVE}/status"
 WORKTREES_DIR="${STATE_DIR}/worktrees"
@@ -133,7 +133,7 @@ Written once during Wave 0; re-read at the start of each wave.
   "max_waves": 10,
   "wave_size_cap": 5,
   "current_wave": 1,
-  "root_worktree": "/abs/path/to/repo/.agent-tdd/root-1/root",
+  "root_worktree": "/abs/path/to/repo/.atdd/root-1/root",
   "repo_root": "/abs/path/to/repo",
   "root_tmux_session": "<whatever-session-the-human-launched-from>",
   "root_tmux_window_id": "@7"
@@ -143,7 +143,7 @@ Written once during Wave 0; re-read at the start of each wave.
 - `root_id` is unique across concurrent Roots in this repo. `init-root.sh` claims it atomically via `mkdir` (race-safe under concurrent inits). The first Root is `root-1`; subsequent Roots get the next free `root-N`.
 - `task` matches `^[a-z0-9-]+$`. Used for the integration branch name `agent-tdd/<task>`.
 - `base` is set explicitly by the human in Wave 0. There is no default — Root must ask. Whatever the human names is what `init-root.sh` branches off and what §8 merges back into.
-- `gh_account` is retained ONLY as an opaque string identifying the GitHub account to use for the optional final hand-off PR (§8). It is no longer used anywhere in the inner flow — all inner-flow work-item state runs through the local `atdd` store, not GitHub. Set by the human in Wave 0 (Root may propose reusing the value from any prior `.agent-tdd/root-*/meta.json` in this repo). `init-root.sh` no longer validates it and no longer performs any account switch; it simply persists the string. Child agents do not receive it and do not switch accounts.
+- `gh_account` is retained ONLY as an opaque string identifying the GitHub account to use for the optional final hand-off PR (§8). It is no longer used anywhere in the inner flow — all inner-flow work-item state runs through the local `atdd` store, not GitHub. Set by the human in Wave 0 (Root may propose reusing the value from any prior `.atdd/root-*/meta.json` in this repo). `init-root.sh` no longer validates it and no longer performs any account switch; it simply persists the string. Child agents do not receive it and do not switch accounts.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
@@ -210,7 +210,7 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
   "state": "paused",
   "from": "test-agent",
   "question": "The issue mentions 'auth middleware' but the codebase has both src/auth/ and src/middleware/auth/. Which do you mean?",
-  "context_path": "/abs/path/.agent-tdd/root-1/worktrees/issue-11-tests"
+  "context_path": "/abs/path/.atdd/root-1/worktrees/issue-11-tests"
 }
 ```
 
@@ -228,7 +228,7 @@ This is the only phase where you converse freely with the human.
 
 1. **Ask the base branch — explicitly, every time.** Required as one of your first questions, before substantive spec discussion. Do **not** guess. Do **not** assume `main`. Do **not** read the current branch and use that. Phrase it directly to the human: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the answer; the literal value is passed to `init-root.sh` as `<base>`, persisted in `meta.json:base`, and merged back into during final integration (§8).
 2. **Ask the GitHub account — once, only for the optional final hand-off PR.** The inner flow no longer touches `gh`; this account is used only if the workflow ends with the optional integration→base PR in §8. Resolve it like this:
-   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from each (e.g. `jq -r '.gh_account // empty'`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo for the final hand-off PR: '<account>'? (y/n, or name a different one)"`.
+   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.atdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from each (e.g. `jq -r '.gh_account // empty'`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo for the final hand-off PR: '<account>'? (y/n, or name a different one)"`.
    - **Otherwise**, ask: `"Which GitHub account should I use for the final hand-off PR (§8)?"`.
    - The literal answer is passed to `init-root.sh` as `<gh-account>` and persisted in `meta.json:gh_account` as an opaque string. `init-root.sh` does not validate it or switch accounts; it is read only at §8.
 3. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
@@ -236,8 +236,8 @@ This is the only phase where you converse freely with the human.
 5. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task> <base> <gh-account>`. All three arguments are required and come from the human's answers above. This:
    - Persists `gh_account` as an opaque string for the §8 hand-off PR (no validation, no account switch).
    - Creates `agent-tdd/<task>` off `<base>`, pushes to origin.
-   - Creates `.agent-tdd/root-<id>/meta.json` (including `gh_account`).
-   - Ensures `.agent-tdd/` is in the repo `.gitignore`.
+   - Creates `.atdd/root-<id>/meta.json` (including `gh_account`).
+   - Ensures `.atdd/` is in the repo `.gitignore`.
 6. **Propose Wave 1.** Lay out the issues you'd open for Wave 1: each with a Subject Under Test, a one-sentence Behavior, and a Type. Apply scope discipline (§3.6) when proposing parallel issues.
 7. **Wait for "go".** When the human says "go" (or equivalent), transition to autopilot. **From this point, do not initiate freeform conversation with the human.**
 
@@ -254,13 +254,13 @@ For each wave (Wave 1 onward):
 5. **Create or activate issues.** For each chosen issue:
    - If new: `atdd issue create --repo <repo> --title <title> --body-file - --label agent-tdd:root-<id>` (feeding the rendered `${CLAUDE_SKILL_DIR}/../atdd/templates/ISSUE_TEMPLATE.md` on stdin), or use the `root-create.sh` recipe which wraps it.
    - Add labels via `atdd label add <ref> <label>`: `agent-tdd:active-wave-<N>` and `agent-tdd:root-<id>` (label `agent-tdd:root-<id>` is added at issue creation; label `agent-tdd:pending` is removed via `atdd label remove <ref> agent-tdd:pending` when activating a backlog issue).
-6. **Write the wave manifest.** `.agent-tdd/<root-id>/wave-<N>/manifest.json`:
+6. **Write the wave manifest.** `.atdd/<root-id>/wave-<N>/manifest.json`:
    ```json
    {"wave": 1, "issues": [3, 7, 11], "expected_terminal_count": 3}
    ```
 7. **Create the workspace session if needed.** `tmux has-session -t ws-root-<id> 2>/dev/null || tmux new-session -d -s ws-root-<id>`.
 8. **Spawn one test agent per issue.** Use `${CLAUDE_SKILL_DIR}/../atdd/recipes/spawn-test-agent.sh <root-id> <wave> <issue#>`. The recipe:
-   - Creates the worktree under `.agent-tdd/<root-id>/worktrees/issue-<N>-tests/`.
+   - Creates the worktree under `.atdd/<root-id>/worktrees/issue-<N>-tests/`.
    - Creates the tmux window in `ws-root-<id>:issue-<N>`.
    - Launches the agent CLI in that window.
    - Waits for the prompt, then `tmux send-keys` the constructed initial prompt (role markdown + per-issue task block, see §5).
@@ -563,8 +563,8 @@ Manipulate **your own window in the dashboard session** — visible at a glance.
 
 ```bash
 # Resolve once per phase
-S="$(jq -r '.root_tmux_session'   .agent-tdd/<root-id>/meta.json)"
-W="$(jq -r '.root_tmux_window_id' .agent-tdd/<root-id>/meta.json)"
+S="$(jq -r '.root_tmux_session'   .atdd/<root-id>/meta.json)"
+W="$(jq -r '.root_tmux_window_id' .atdd/<root-id>/meta.json)"
 
 # Window name = current state — target by window ID
 tmux rename-window -t "${W}" 'root-<id>: wave-<N> (<count> active)'
@@ -632,7 +632,7 @@ WS=${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh
 | Test agent crash (silent death) | Status file missing; watcher does not advance until its 30-min hard ceiling fires (`EVENT=timeout`, §6.1). Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
 | Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged branches exist and merge escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
-| Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` branch did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.agent-tdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
+| Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` branch did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.atdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
 | Merge-blocked / merge-regression | §3.7 escalation ladder. |
 
 **Stuck-wave hard ceiling:** the wave-watcher exits with `EVENT=timeout` after 30 minutes of wall-clock from invocation start without any terminal or paused event (per-invocation, not cumulative — see §6.1). On timeout, Root runs §6.1's health checklist on each non-terminal issue (wrapper PID alive, worker PID alive, worker CPU advancing in a 30s sample, no failure marker). If all four signals are green and the issue has not yet used its one-time self-extension this wave, Root silently re-issues the watcher (consuming the `<state-dir>/wave-<N>/extensions/issue-<X>` marker). Otherwise Root **must** escalate to the human (do not blindly re-loop the watcher). The default escalation recommendation is to manually write a `.failed` status for the dead agent(s) so the wave can advance, but the recommendation is per-case (see §6.1's `EVENT=timeout` block). The self-extension cap (one per issue per wave) means Root will surface to the human within 60 min wall-clock of any stuck issue, regardless of forward-progress signals.
@@ -667,7 +667,7 @@ On clean termination, you:
 
 ## 9. Glossary
 
-- **Root Agent** — the orchestrator (you). Lives in a tmux window initially named `root-<id>` (the name evolves as Root rewrites it to display state) inside whatever session the human launched the agent CLI from. Both the session name and the window's stable tmux ID are recorded by `init-root.sh` as `meta.json:root_tmux_session` and `meta.json:root_tmux_window_id`; Root targets renames via the window ID, never via `<session>:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
+- **Root Agent** — the orchestrator (you). Lives in a tmux window initially named `root-<id>` (the name evolves as Root rewrites it to display state) inside whatever session the human launched the agent CLI from. Both the session name and the window's stable tmux ID are recorded by `init-root.sh` as `meta.json:root_tmux_session` and `meta.json:root_tmux_window_id`; Root targets renames via the window ID, never via `<session>:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.atdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
 - **Static issue** — an `atdd` issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.

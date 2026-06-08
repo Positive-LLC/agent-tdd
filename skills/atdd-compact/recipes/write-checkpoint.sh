@@ -5,7 +5,7 @@
 # Usage:  write-checkpoint.sh <root-id> <handoff-content-file>
 #
 # Effects:
-#   1. Copies the brief to .agent-tdd/<root-id>/wave-<N>/handoff.md (durable;
+#   1. Copies the brief to .atdd/<root-id>/wave-<N>/handoff.md (durable;
 #      the load-bearing artifact — survives the prior Root's death).
 #   2. Posts the brief as a comment on every work-item with labels
 #      agent-tdd:active-wave-<N> AND agent-tdd:root-<id>.
@@ -34,7 +34,7 @@ command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 # --- resolve repo root + state dir + wave ---
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
   || die "not inside a git repo"
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 META="${STATE_DIR}/meta.json"
 [[ -f "$META" ]] || die "meta.json not found at ${META}"
 

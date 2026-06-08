@@ -26,7 +26,7 @@
 | **SubIssue**    | A per-repo work-unit work-item in the store. Lives in **its target repo**. Linked to its RootIssue as a native sub-issue. The unit handed to `/atdd`. |
 | **head**        | Conceptual term for a RootIssue when talking about discussion order. "One head at a time" = one RootIssue in dialogue at a time. |
 | **home repo**   | The one repo that hosts NotebookIssue + all RootIssues. SubIssues live in their own target repos. Recorded in every member repo's manifest. |
-| **manifest**    | `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file pointing every member repo of the system at the same home repo and NotebookIssue. In orchestration mode it also carries a `members` repo→local-clone registry (§4). |
+| **manifest**    | `${REPO_ROOT}/.atdd/manifest.json`. Per-repo file pointing every member repo of the system at the same home repo and NotebookIssue. In orchestration mode it also carries a `members` repo→local-clone registry (§4). |
 | **orchestration mode** | The phase you enter after the human's single "go": you spawn one Root per ready SubIssue and act as each Root's human (delegate mode). Operational contract: `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`. Distinct from planning mode (this doc). |
 | **go-gate**     | The one-time human "go" that arms orchestration mode after planning. Includes confirming a base branch per repo. See ORCHESTRATE.md §3.1. |
 | **spawned Root** | A normal `/atdd-from-issue` Root you launched in orchestration mode. It does not know its "human" is you — `/atdd` is unchanged and unaware. |
@@ -189,7 +189,7 @@ body (shared context) **plus** its own SubIssue body (specific work) as the Wave
 
 ## 4. `manifest.json` schema
 
-Lives at `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file; every member repo of the
+Lives at `${REPO_ROOT}/.atdd/manifest.json`. Per-repo file; every member repo of the
 system has one, all pointing at the same home repo + NotebookIssue.
 
 ```json

@@ -59,7 +59,7 @@ SESSION=""
 WINDOW_ID=""
 if [[ -n "${ROOT_ID}" ]]; then
   REPO_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd || true)"
-  META="${REPO_ROOT:-}/.agent-tdd/${ROOT_ID}/meta.json"
+  META="${REPO_ROOT:-}/.atdd/${ROOT_ID}/meta.json"
   if [[ -f "${META}" ]]; then
     SESSION="$(grep -E '"root_tmux_session"' "${META}" | sed -E 's/.*"root_tmux_session"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
     WINDOW_ID="$(grep -E '"root_tmux_window_id"' "${META}" | sed -E 's/.*"root_tmux_window_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"

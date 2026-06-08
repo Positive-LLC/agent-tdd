@@ -16,11 +16,11 @@
 #     WITHOUT mutating the main worktree's HEAD (uses `git branch`, not
 #     `git checkout -b`).
 #   - Pushes integration branch to origin.
-#   - Adds a private Root worktree at `.agent-tdd/<root-id>/root/` checked out
+#   - Adds a private Root worktree at `.atdd/<root-id>/root/` checked out
 #     on the integration branch. Root's tmux window will `cd` into this path.
-#   - Writes `.agent-tdd/.gitignore` containing `*` (self-contained — does NOT
+#   - Writes `.atdd/.gitignore` containing `*` (self-contained — does NOT
 #     touch the repo's root .gitignore).
-#   - Writes `.agent-tdd/<root-id>/meta.json` (includes absolute root_worktree).
+#   - Writes `.atdd/<root-id>/meta.json` (includes absolute root_worktree).
 #
 # Prints the chosen root-id to stdout (the only stdout output — Root reads it).
 # All progress messages go to stderr.
@@ -93,11 +93,11 @@ git -C "$REPO_ROOT" diff --cached --quiet \
   || die "main worktree has staged changes; clean up first"
 
 # --- atomic root-id claim ---
-mkdir -p "${REPO_ROOT}/.agent-tdd"
+mkdir -p "${REPO_ROOT}/.atdd"
 ROOT_ID=""
 STATE_DIR=""
 for n in $(seq 1 32); do
-  candidate="${REPO_ROOT}/.agent-tdd/root-${n}"
+  candidate="${REPO_ROOT}/.atdd/root-${n}"
   # `mkdir` without -p is atomic on POSIX: succeeds iff the dir didn't exist.
   if mkdir "${candidate}" 2>/dev/null; then
     ROOT_ID="root-${n}"
@@ -105,14 +105,14 @@ for n in $(seq 1 32); do
     break
   fi
 done
-[[ -n "${ROOT_ID}" ]] || die "could not claim a root-id within 32 attempts; clean up stale .agent-tdd/root-* dirs"
+[[ -n "${ROOT_ID}" ]] || die "could not claim a root-id within 32 attempts; clean up stale .atdd/root-* dirs"
 log "claimed root-id: ${ROOT_ID}"
 
-# --- ensure .agent-tdd/.gitignore ---
-# Self-contained: a `.gitignore` file with `*` inside .agent-tdd/ ignores
+# --- ensure .atdd/.gitignore ---
+# Self-contained: a `.gitignore` file with `*` inside .atdd/ ignores
 # everything beneath it from any worktree. Avoids editing the repo's root
 # .gitignore (which would dirty the main worktree or pollute <base>'s history).
-GITIGNORE="${REPO_ROOT}/.agent-tdd/.gitignore"
+GITIGNORE="${REPO_ROOT}/.atdd/.gitignore"
 if [[ ! -f "${GITIGNORE}" ]] || [[ "$(cat "${GITIGNORE}")" != "*" ]]; then
   log "writing ${GITIGNORE}"
   printf '*\n' > "${GITIGNORE}"

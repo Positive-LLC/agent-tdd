@@ -38,7 +38,7 @@ Three properties shape every file in `skills/atdd/`:
 
 1. **Spawned agents don't inherit the plugin.** Child agents are launched as fresh agent-CLI sessions with no plugin registry — test and impl agents interactively in tmux windows (prompt pasted via tmux buffer; the impl session is supervised by `launch-impl-agent.sh`, which writes `.crashed` on status-less session death), the rebase agent as a one-shot `claude -p`. Their entire initial context is `roles/<ROLE>_AGENT_ROLE.md` concatenated with a per-issue task block. That is why the role markdowns are long and fully self-contained — they are *the contract*, not documentation about the contract.
 
-2. **The conversation is ephemeral, the disk is durable.** Root may be auto-compacted during multi-hour workflows. Every decision must be externalized to `.agent-tdd/<root-id>/` (state dir, gitignored) and to GitHub labels. SKILL.md and PROTOCOL.md both contain explicit "re-read at every phase boundary" instructions because Root cannot trust its conversation memory.
+2. **The conversation is ephemeral, the disk is durable.** Root may be auto-compacted during multi-hour workflows. Every decision must be externalized to `.atdd/<root-id>/` (state dir, gitignored) and to GitHub labels. SKILL.md and PROTOCOL.md both contain explicit "re-read at every phase boundary" instructions because Root cannot trust its conversation memory.
 
 3. **One orchestrator per task per layer; entry-point skills are human-only.** All user-invocable skills have `disable-model-invocation: true` and `user-invocable: true`. As of v0.10.0 the plugin has five entry points across two layers:
 
@@ -51,7 +51,7 @@ Three properties shape every file in `skills/atdd/`:
 
 ### Coordination model
 
-- **Child → Root**: atomic status files (`.done`/`.failed`/`.aborted`/`.crashed`/`.paused`) under `.agent-tdd/<root-id>/wave-<N>/status/`. Root waits via a single `wave-watcher.sh` issued **once per wait with `run_in_background=true`** — this keeps Root idle (zero turns, zero tokens) until the watcher exits on terminal-threshold, first pause, or **30-min hard ceiling** (30 min wall-clock from invocation start — the safety net for silently dead child agents; on timeout Root runs a per-issue health checklist and may self-extend at most once per issue per wave before mandatory human escalation, see PROTOCOL §6.1). Background Bash does not inherit the foreground 10-min cap.
+- **Child → Root**: atomic status files (`.done`/`.failed`/`.aborted`/`.crashed`/`.paused`) under `.atdd/<root-id>/wave-<N>/status/`. Root waits via a single `wave-watcher.sh` issued **once per wait with `run_in_background=true`** — this keeps Root idle (zero turns, zero tokens) until the watcher exits on terminal-threshold, first pause, or **30-min hard ceiling** (30 min wall-clock from invocation start — the safety net for silently dead child agents; on timeout Root runs a per-issue health checklist and may self-extend at most once per issue per wave before mandatory human escalation, see PROTOCOL §6.1). Background Bash does not inherit the foreground 10-min cap.
 - **Root → Child**: `tmux send-keys` into the child's window.
 - **Root → Human**: `tmux rename-window` + `notify-send`/`osascript`. Children **never** talk to the human directly.
 
@@ -71,7 +71,7 @@ After planning, on a single human "go" (the go-gate), the Notes Agent enters orc
 - **Child → orchestrator:** each Root writes a coarse `root-signal.json` (via the env-gated `write-signal.sh`, Root-side) to a path in the orchestrator's state dir. The orchestrator waits on `roots-watcher.sh` — single-shot, `run_in_background=true`, 10 s poll, 60 min ceiling, **zero `gh` calls** (mirrors `wave-watcher.sh`); it reads only local signals + tmux window liveness and emits one `EVENT=` line. This **bends** "two layers talk only via GitHub" for the orchestration *coordination* layer (see WHITEPAPER §10.7) — but GitHub stays the truth for "work done", and each escalation+answer is mirrored to a SubIssue comment for durable recovery.
 - **Orchestrator → Root:** `tmux send-keys` into the Root's window (after a prompt-ready poll), exactly as a Root answers a child.
 - **Orchestrator → human:** rename its own window + `notify-human.sh` + a message in the live `/agent-tdd:fix` transcript — only on genuine exceptions (delegate mode). The **final merge-to-base is always human-confirmed per (repo, base)** and the **orchestrator** runs `gh pr merge` (the Root opens the PR and stops). A `launch-root.sh` supervisor writes a `crashed` signal on silent Root death.
-- **State** lives in the invoking repo's `.agent-tdd/notes-<id>/` (claimed atomically like `root-N`); the per-cohort registry is `cohort-<RI#>/cohort.json`. The orchestrator re-derives its live-Root set from disk + GitHub + a `meta.json` glob across member repos after any compaction.
+- **State** lives in the invoking repo's `.atdd/notes-<id>/` (claimed atomically like `root-N`); the per-cohort registry is `cohort-<RI#>/cohort.json`. The orchestrator re-derives its live-Root set from disk + GitHub + a `meta.json` glob across member repos after any compaction.
 
 ### Locked numerics (don't change without updating WHITEPAPER + PROTOCOL together)
 
@@ -87,7 +87,7 @@ After planning, on a single human "go" (the go-gate), the Notes Agent enters orc
 - **WHITEPAPER.md is the design rationale for both layers** (v2 since v0.10.0; v1 covered only the Root Agent). Edit it only at major-version bumps. Status changes, new risks, and resolved smoke-test issues belong in ROADMAP.md, not the whitepaper.
 - **Role markdowns are agent prompts.** Edits to `roles/*.md` change the runtime behavior of spawned agents directly. They are not documentation. Test changes by reading them as if you were the agent receiving them cold.
 - **Recipe scripts must remain idempotent and resumable** where reasonable — Root may re-invoke them after a crash. Each script begins with `set -euo pipefail` and routes progress to stderr; only intentional return values go to stdout (callers parse it).
-- **Path discipline**: every recipe and prompt uses absolute paths. Worktrees see their own working tree, not the main repo's, and `.agent-tdd/<root-id>/` only exists in the main repo's working tree.
+- **Path discipline**: every recipe and prompt uses absolute paths. Worktrees see their own working tree, not the main repo's, and `.atdd/<root-id>/` only exists in the main repo's working tree.
 - **`${CLAUDE_SKILL_DIR}`** is the canonical reference to this skill's directory. Use it in PROTOCOL.md, role markdowns, and any new skill content — never hard-code paths.
 
 ## Plugin metadata

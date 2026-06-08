@@ -41,7 +41,7 @@ command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
   || die "not inside a git repo"
-META="${REPO_ROOT}/.agent-tdd/${ROOT_ID}/meta.json"
+META="${REPO_ROOT}/.atdd/${ROOT_ID}/meta.json"
 [[ -f "$META" ]] || die "meta.json not found at ${META}"
 
 SESSION="$(jq -r '.root_tmux_session // empty' "$META")"

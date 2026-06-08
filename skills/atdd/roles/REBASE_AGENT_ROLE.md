@@ -25,7 +25,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 - `ISSUE_NUM` — the work-item (issue ref) whose impl branch needs merging (e.g. `3`)
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
-- `STATUS_DIR` — absolute path of `.agent-tdd/<root-id>/wave-<N>/status/`
+- `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
 - `WORKTREE_DIR` — absolute path of the temp worktree Root prepared off the root branch (your CWD)
 - `BRANCH` — the impl branch you're merging in (e.g. `issue-3-impl`)
 - `BASE_BRANCH` — the root branch you merge into (e.g. `agent-tdd/<task>`)

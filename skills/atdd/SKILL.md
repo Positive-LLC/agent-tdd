@@ -22,10 +22,10 @@ This file (`SKILL.md`) is your **bootstrap** — identity, invariants, and point
 These are non-negotiable. Violation breaks the workflow.
 
 1. **You are the sole human interface.** Test agents, impl agents, and rebase agents never communicate with the human directly. All human-facing escalations go through you.
-2. **No decision lives only in conversation memory.** Externalize to `.agent-tdd/<root-id>/`, `meta.json`, status files, and GitHub labels. Your conversation may be compacted; the disk persists.
+2. **No decision lives only in conversation memory.** Externalize to `.atdd/<root-id>/`, `meta.json`, status files, and GitHub labels. Your conversation may be compacted; the disk persists.
 3. **Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md` at every wave-phase transition** (Wave 0 → 1 handoff, wave initiation, Gate 1 reached, Gate 2 reached, before firing the next wave, on termination).
 4. **Re-read the relevant role markdown** (`${CLAUDE_SKILL_DIR}/../atdd/roles/<ROLE>.md`) immediately before constructing any spawn prompt for that role.
-5. **From the moment the human says "go" at the end of Wave 0, you are in autopilot.** Do not initiate freeform conversation with the human. Human input during a wave is feedback for the next wave's planning, not a request to handle inline. If the human types something, capture it as a backlog note in `.agent-tdd/<root-id>/feedback.md` and continue.
+5. **From the moment the human says "go" at the end of Wave 0, you are in autopilot.** Do not initiate freeform conversation with the human. Human input during a wave is feedback for the next wave's planning, not a request to handle inline. If the human types something, capture it as a backlog note in `.atdd/<root-id>/feedback.md` and continue.
 6. **Never spawn additional impl agents for an issue.** The single-session/single-PR rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you** re-spawning a test agent in response to an `.aborted` status, bounded to one retry per issue per wave.
 7. **State your current phase in every response.** A one-line preamble like `[wave-2, gate-1 reached, processing aborts]` so the human can see drift at a glance.
 8. **Never amend or force-push merged commits.** Always create new commits and PRs.
@@ -67,12 +67,12 @@ The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 
 1. **Mirror back what you heard, briefly.** One paragraph. Confirm the Subject Under Test, expected behavior, success criteria.
 2. **Ask for the base branch — explicitly, every time.** Required as one of your first questions. Do **not** guess, do **not** assume `main`, do **not** use the current branch. Phrase it directly: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the human's answer before proceeding. The answer is passed verbatim to `init-root.sh` and recorded in `meta.json:base`; final integration (§8) merges back to this same branch.
-3. **Ask for the GitHub account — once, for the optional final hand-off PR only.** The inner workflow touches no GitHub account: work-item state lives in the local atdd store. The only GitHub touchpoint is the **final** integration→base PR at §8, if the human wants one. Ask for the account so it is recorded up front: `"Which GitHub account should I use if/when I open the final integration PR? (or 'none' to skip the PR)"`. If a prior Root in this repo recorded one, propose reusing it: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from the most recent (e.g. `jq -r '.gh_account // empty' <file>`). Pass the answer verbatim to `init-root.sh` as the third argument; the value is persisted as `meta.json:gh_account` and used only when opening the final PR.
+3. **Ask for the GitHub account — once, for the optional final hand-off PR only.** The inner workflow touches no GitHub account: work-item state lives in the local atdd store. The only GitHub touchpoint is the **final** integration→base PR at §8, if the human wants one. Ask for the account so it is recorded up front: `"Which GitHub account should I use if/when I open the final integration PR? (or 'none' to skip the PR)"`. If a prior Root in this repo recorded one, propose reusing it: `ls "${REPO_ROOT}/.atdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from the most recent (e.g. `jq -r '.gh_account // empty' <file>`). Pass the answer verbatim to `init-root.sh` as the third argument; the value is persisted as `meta.json:gh_account` and used only when opening the final PR.
 4. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
 5. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
 6. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
-7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, records the gh account (for the final PR only), creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
-8. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Your tmux window has already been renamed to `root-<id>` by `init-root.sh`; from now on, every dashboard rename in PROTOCOL.md targets the stable window ID stored in `meta.json:root_tmux_window_id` — never `<session>:root-<id>`.
+7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, records the gh account (for the final PR only), creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.atdd/<root-id>/root/`, writes `meta.json`, and writes `.atdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
+8. **`cd` into your Root worktree.** Run `cd .atdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Your tmux window has already been renamed to `root-<id>` by `init-root.sh`; from now on, every dashboard rename in PROTOCOL.md targets the stable window ID stored in `meta.json:root_tmux_window_id` — never `<session>:root-<id>`.
 9. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
 10. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
 
@@ -109,7 +109,7 @@ What lives where:
 
 ---
 
-## State on disk (under repo's `.agent-tdd/<root-id>/`)
+## State on disk (under repo's `.atdd/<root-id>/`)
 
 | Path | Purpose |
 |---|---|
@@ -137,7 +137,7 @@ Until termination, every assistant response must begin with a one-line phase pre
 [terminating: awaiting human confirmation for main merge]
 ```
 
-This is your self-check. If you can't write the preamble, you've lost track of state — re-read PROTOCOL.md and the contents of `.agent-tdd/<root-id>/`.
+This is your self-check. If you can't write the preamble, you've lost track of state — re-read PROTOCOL.md and the contents of `.atdd/<root-id>/`.
 
 ---
 
@@ -146,8 +146,8 @@ This is your self-check. If you can't write the preamble, you've lost track of s
 Your conversation may be auto-compacted during a long workflow. The skill body (this file) is ephemeral and may be evicted from context. If you notice you've lost details (e.g. you can't remember the wave manifest, recent status events, or the exact rebase-ladder rule), do this:
 
 1. Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
-2. Re-read `.agent-tdd/<root-id>/meta.json` and the current wave's `manifest.json`.
-3. List the current wave's status dir: `ls -la .agent-tdd/<root-id>/wave-<N>/status/`.
+2. Re-read `.atdd/<root-id>/meta.json` and the current wave's `manifest.json`.
+3. List the current wave's status dir: `ls -la .atdd/<root-id>/wave-<N>/status/`.
 4. Run `atdd issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>` to confirm in-flight issues.
 
 The disk is your durable memory. Trust it over your conversation.
@@ -170,14 +170,14 @@ Otherwise (fresh start):
 
 ### Resume bootstrap (when `$ARGUMENTS` is `resume root-<id>`)
 
-A prior Root for this `<root-id>` was handed off to you by `/atdd-compact`. Its conversation is gone; the durable handoff brief is on disk at `.agent-tdd/<root-id>/wave-<N>/handoff.md` and as the most recent comment on the wave's in-flight PRs/issues. The state dir is your full source of truth.
+A prior Root for this `<root-id>` was handed off to you by `/atdd-compact`. Its conversation is gone; the durable handoff brief is on disk at `.atdd/<root-id>/wave-<N>/handoff.md` and as the most recent comment on the wave's in-flight PRs/issues. The state dir is your full source of truth.
 
 Do this in order, before anything else:
 
 1. **Parse `<root-id>`** from `$ARGUMENTS` (everything after `resume `). Validate against `^root-[a-z0-9-]+$`.
-2. **Verify `.agent-tdd/<root-id>/meta.json` exists.** If not, halt and tell the human: `"Resume failed: no state dir at .agent-tdd/<root-id>/. Re-run /atdd <spec> for a fresh Root."` Do not fall through to Wave 0.
+2. **Verify `.atdd/<root-id>/meta.json` exists.** If not, halt and tell the human: `"Resume failed: no state dir at .atdd/<root-id>/. Re-run /atdd <spec> for a fresh Root."` Do not fall through to Wave 0.
 3. **Execute the Compaction defense steps** above — re-read `PROTOCOL.md`; re-read `meta.json` and the current wave's `manifest.json`; list `wave-<N>/status/`; run `atdd issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>`.
-4. **Read the handoff brief** at `.agent-tdd/<root-id>/wave-<current_wave>/handoff.md`. This was written by the prior Root via `/atdd-compact` and contains a "Conversation gap-fill" section with anything that was live in conversation but not on disk, plus a "Next concrete action" section pointing to the exact PROTOCOL.md step to take next. The brief is best-effort, not load-bearing — if absent or unreadable, proceed from disk state alone.
+4. **Read the handoff brief** at `.atdd/<root-id>/wave-<current_wave>/handoff.md`. This was written by the prior Root via `/atdd-compact` and contains a "Conversation gap-fill" section with anything that was live in conversation but not on disk, plus a "Next concrete action" section pointing to the exact PROTOCOL.md step to take next. The brief is best-effort, not load-bearing — if absent or unreadable, proceed from disk state alone.
 5. **`cd` into `meta.json:root_worktree`.** Your cwd from now on is the Root worktree on `agent-tdd/<task>`. (Do **not** run `init-root.sh` — that would attempt to claim a fresh root-id.)
 6. **Print a one-line phase preamble** in your first response (per the Mode protocol). The prior Root is currently running step 5 of `/atdd-compact` and will read your captured pane to verify the handoff worked — your preamble is the signal it looks for. Cite the right `<root-id>` and wave number.
 7. **Re-issue `wave-watcher.sh`** if a wave is in-flight (any non-terminal issues remain in the manifest). The prior Root's background watcher (if it had one) is now a dangling no-op tied to a dying agent process; you need a fresh one tied to your session. Use the standard PROTOCOL §6.1 invocation.

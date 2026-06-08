@@ -47,14 +47,14 @@ REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
 # Identify your own root-id by matching your tmux window id against meta.json files:
 MY_WIN_ID="$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')"
 ROOT_ID=""
-for meta in "${REPO_ROOT}/.agent-tdd/"root-*/meta.json; do
+for meta in "${REPO_ROOT}/.atdd/"root-*/meta.json; do
   if grep -q "\"root_tmux_window_id\": \"${MY_WIN_ID}\"" "$meta"; then
     ROOT_ID="$(jq -r '.root_id' "$meta")"
     break
   fi
 done
 [[ -n "$ROOT_ID" ]] || { echo "could not identify your root-id from window ${MY_WIN_ID}"; exit 1; }
-STATE_DIR="${REPO_ROOT}/.agent-tdd/${ROOT_ID}"
+STATE_DIR="${REPO_ROOT}/.atdd/${ROOT_ID}"
 WAVE="$(jq -r '.current_wave' "${STATE_DIR}/meta.json")"
 ```
 
