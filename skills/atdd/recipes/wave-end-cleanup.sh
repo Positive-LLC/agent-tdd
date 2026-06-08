@@ -11,13 +11,13 @@
 #     (the impl supervisor kills its window; the test CLI exits) but a window
 #     lingers when the agent idles at the prompt instead of exiting, or when
 #     the test window's shell survives the CLI exit.
-#   - For each `.done` issue whose impl PR is in MERGED state, deletes the
+#   - For each `.done` issue marked merged (`"merged": true` in its status file,
+#     written by Root after a successful `atdd integrate`), deletes the
 #     `issue-<N>-tests` and `issue-<N>-impl` branches (local + remote). The
-#     content is captured in `agent-tdd/<task>` after the squash-merge, and
-#     GitHub keeps the merged PR viewable even after the branch is deleted.
+#     content is captured in `agent-tdd/<task>` after the git merge.
 #   - For non-`.done` terminal states (`.failed`, `.aborted`, `.crashed`) and
-#     for `.done` issues whose PR is NOT yet merged, branches are preserved —
-#     they may hold the only copy of debugging context or open-PR work.
+#     for `.done` issues NOT yet merged, branches are preserved — they may hold
+#     the only copy of debugging context or unmerged work.
 #   - Runs `git worktree prune` to clean up dangling references.
 #   - Does NOT delete the status files themselves (they are the audit trail).
 
@@ -69,26 +69,15 @@ done
 
 git -C "${REPO_ROOT}" worktree prune
 
-# --- branch deletion: only for .done with MERGED PR ---
+# --- branch deletion: only for .done issues merged into the root branch ---
 for f in "${STATUS_DIR}"/issue-*.done; do
   base="$(basename "$f")"
   issue_num="${base#issue-}"
   issue_num="${issue_num%.done}"
 
-  pr_url="$(jq -r '.pr_url // empty' "$f" 2>/dev/null || true)"
-  if [[ -z "$pr_url" ]]; then
-    log "issue ${issue_num}: .done has no pr_url — preserving branches"
-    continue
-  fi
-  pr_num="${pr_url##*/}"
-  if ! [[ "$pr_num" =~ ^[0-9]+$ ]]; then
-    log "issue ${issue_num}: pr_url '$pr_url' did not yield a numeric PR — preserving branches"
-    continue
-  fi
-
-  state="$(gh pr view "$pr_num" --json state --jq .state 2>/dev/null || echo UNKNOWN)"
-  if [[ "$state" != "MERGED" ]]; then
-    log "issue ${issue_num}: PR #${pr_num} state=${state} (not MERGED) — preserving branches"
+  merged="$(jq -r '.merged // false' "$f" 2>/dev/null || echo false)"
+  if [[ "$merged" != "true" ]]; then
+    log "issue ${issue_num}: .done not marked merged — preserving branches"
     continue
   fi
 

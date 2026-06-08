@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
-# issue-edit.sh — edit the title and/or body of an atdd-managed issue
-# (a RootIssue or a SubIssue). This is the "U" (update content) of CRUD for
-# both entity types — the mechanism is identical, only the guard differs, so
-# one recipe serves both.
-#
-# Refuses to touch any issue that is not managed by this system (must carry
-# `atdd:root` or `atdd:sub`) — prevents accidental edits to unrelated issues.
+# issue-edit.sh — edit the title and/or body of an atdd-managed issue (RootIssue
+# or SubIssue). Refuses to touch issues that carry neither `atdd:root` nor
+# `atdd:sub`.
 #
 # Usage:  issue-edit.sh <ref> [--title <title>] [--body-file <file|->]
-#   <ref>          = <owner>/<repo>#<N>
-#   --title        = new title (optional)
-#   --body-file    = path to new body markdown, or "-" to read stdin (optional)
-# At least one of --title / --body-file must be given.
 # Output: <owner>/<repo>#<N> on stdout (one line).
 
 set -euo pipefail
@@ -19,15 +11,13 @@ set -euo pipefail
 log() { printf '[issue-edit] %s\n' "$*" >&2; }
 die() { printf '[issue-edit] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
-command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
+command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
+command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 [[ $# -ge 1 ]] || die "usage: issue-edit.sh <ref> [--title <title>] [--body-file <file|->]"
 REF="$1"; shift
-[[ "$REF" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$ ]] \
+[[ "$REF" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$ ]] \
   || die "ref must look like <owner>/<repo>#<N> (got: $REF)"
-REPO="${BASH_REMATCH[1]}"
-NUMBER="${BASH_REMATCH[2]}"
 
 TITLE=""; HAVE_TITLE=0
 BODY_FILE=""; HAVE_BODY=0
@@ -47,31 +37,22 @@ MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
 ROOT_LABEL="$(jq -er '.labels.root' "$MANIFEST")"
 SUB_LABEL="$(jq -er '.labels.sub' "$MANIFEST")"
 
-# Guard: only edit issues this system manages.
-LBL_LIST="$(gh api "repos/${REPO}/issues/${NUMBER}" -q '.labels[].name' 2>&1)" \
-  || die "failed to fetch ${REF}: $LBL_LIST"
-grep -qxF "$ROOT_LABEL" <<<"$LBL_LIST" || grep -qxF "$SUB_LABEL" <<<"$LBL_LIST" \
+VIEW="$(atdd issue view "$REF")" || die "failed to fetch ${REF}"
+jq -e --arg r "$ROOT_LABEL" --arg s "$SUB_LABEL" \
+  '(.labels|index($r)) or (.labels|index($s))' >/dev/null <<<"$VIEW" \
   || die "${REF} carries neither '${ROOT_LABEL}' nor '${SUB_LABEL}' — not an atdd-managed issue"
 
-# Resolve body content up-front so we can pass it via --body (handles "-"
-# stdin uniformly and avoids depending on gh's own --body-file path parsing).
-ARGS=(issue edit "$NUMBER" -R "$REPO")
-if [[ "$HAVE_TITLE" -eq 1 ]]; then
-  [[ -n "$TITLE" ]] || die "title must be non-empty"
-  ARGS+=(--title "$TITLE")
-fi
-if [[ "$HAVE_BODY" -eq 1 ]]; then
-  if [[ "$BODY_FILE" == "-" ]]; then
-    BODY="$(cat)"
-  else
-    [[ -r "$BODY_FILE" ]] || die "body file not readable: $BODY_FILE"
-    BODY="$(cat "$BODY_FILE")"
-  fi
-  [[ -n "$BODY" ]] || die "body must be non-empty"
-  ARGS+=(--body "$BODY")
-fi
+ARGS=(issue edit "$REF")
+[[ "$HAVE_TITLE" -eq 1 ]] && { [[ -n "$TITLE" ]] || die "title must be non-empty"; ARGS+=(--title "$TITLE"); }
 
 log "editing ${REF}"
-gh "${ARGS[@]}" >/dev/null || die "failed to edit ${REF}"
+if [[ "$HAVE_BODY" -eq 1 ]]; then
+  if [[ "$BODY_FILE" == "-" ]]; then BODY="$(cat)"; else
+    [[ -r "$BODY_FILE" ]] || die "body file not readable: $BODY_FILE"; BODY="$(cat "$BODY_FILE")"; fi
+  [[ -n "$BODY" ]] || die "body must be non-empty"
+  printf '%s' "$BODY" | atdd "${ARGS[@]}" --body-file - >/dev/null || die "failed to edit ${REF}"
+else
+  atdd "${ARGS[@]}" >/dev/null || die "failed to edit ${REF}"
+fi
 
 printf '%s\n' "$REF"

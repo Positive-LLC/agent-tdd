@@ -41,16 +41,11 @@ CONCURRENT_CAP="${2:-3}"
 
 COHORT_WALLCLOCK_CAP_SEC=21600   # 6h per-cohort ceiling (forced human checkpoint)
 
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
 command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
 
-# --- validate gh account exists (do NOT switch: orchestrator reads are account
-#     -agnostic; per-Root merges switch within an isolated GH_CONFIG_DIR) ---
-GH_STATUS="$(gh auth status 2>&1 || true)"
-if ! grep -qE "Logged in to github\.com account ${GH_ACCOUNT}( |$|\))" <<<"${GH_STATUS}"; then
-  die "gh account '${GH_ACCOUNT}' is not logged in. \`gh auth status\`:
-${GH_STATUS}"
-fi
+# Phase 1: no GitHub in the inner flow, so there is no gh account to validate
+# or switch. `<gh-account>` is retained as an opaque string recorded in
+# meta.json for the single OPTIONAL final hand-off PR to base (ORCHESTRATE §6).
 
 # --- tmux capture (orchestration requires tmux) ---
 [[ -n "${TMUX:-}" ]] || die "orch-init.sh must run inside tmux (TMUX unset). Relaunch: tmux new -s atdd, then your CLI, then re-run /agent-tdd:fix."

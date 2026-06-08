@@ -1,6 +1,6 @@
 ---
 name: atdd-fix
-description: Plan a bug-fix as the Notes Agent — investigate privately, produce well-specced RootIssues + per-repo SubIssues in the configured GitHubProject, then (by default, after a single human "go") orchestrate /atdd across the ready SubIssues — or hand off manually. Use when the human types `/agent-tdd:fix <free-form bug description>`. Result-driven dialogue only; details stay in the NotebookIssue.
+description: Plan a bug-fix as the Notes Agent — investigate privately, produce well-specced RootIssues + per-repo SubIssues in the local atdd store, then (by default, after a single human "go") orchestrate /atdd across the ready SubIssues — or hand off manually. Use when the human types `/agent-tdd:fix <free-form bug description>`. Result-driven dialogue only; details stay in the NotebookIssue.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob
@@ -19,7 +19,7 @@ You operate in **two modes**, both defined in CORE.md (and, for orchestration,
 `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`):
 
 - **Planning mode** (default until the human says "go"): you investigate, take
-  notes, and produce GitHub issues. No tmux, no child agents, no product code.
+  notes, and produce work-items in the local atdd store. No tmux, no child agents, no product code.
 - **Orchestration mode** (after the human's single "go"): you spawn one Root per
   ready SubIssue via `/agent-tdd:atdd-from-issue` and act as each Root's human —
   running the whole dependency graph, one RootIssue at a time, consulting the human
@@ -55,28 +55,23 @@ active head).
 
 Follow CORE.md §2 immediately:
 
-1. `gh auth status` — confirm `project` scope is present. If not, stop and
-   tell the human to run `gh auth refresh -s project`.
-2. Check whether `.agent-tdd/manifest.json` already exists at the repo root:
+1. Check whether `.agent-tdd/manifest.json` already exists at the repo root:
    - **If yes**, run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh`
      with no args (it just prints the JSON).
-   - **If no**, ask the human (one short message) for:
-     (a) the GitHubProject URL, and
-     (b) the home repo (`owner/name` that will host NotebookIssue + RootIssues).
-     Then call `manifest-ensure.sh <project-url> <home-repo>` with those values.
-     Do **not** rely on the recipe's interactive `read` prompts — Bash-tool
-     stdin is not interactive.
-3. Read the NotebookIssue body (via the URL in the manifest) to restore prior
-   context.
-4. Run `topology-next-urgent.sh`. If it returns an issue, ask the human
+   - **If no**, ask the human (one short message) for the home repo
+     (`owner/name` that will host NotebookIssue + RootIssues). Then call
+     `manifest-ensure.sh <home-repo>` with that value. Do **not** rely on the
+     recipe's interactive `read` prompts — Bash-tool stdin is not interactive.
+2. Read the NotebookIssue body to restore prior context.
+3. Run `topology-next-urgent.sh`. If it returns an issue, ask the human
    whether to resume that head or start a fresh one from `$ARGUMENTS`. If
    empty, start a fresh one.
-5. Enter the discussion loop (CORE.md §5).
-6. **When ≥1 RootIssue is ready, reach the go-gate.** Run the ORCHESTRATE.md §3.1
+4. Enter the discussion loop (CORE.md §5).
+5. **When ≥1 RootIssue is ready, reach the go-gate.** Run the ORCHESTRATE.md §3.1
    Step-0 tmux check first: if the session is inside tmux, offer the human "go"
    (orchestrate the whole graph yourself, confirming a base branch per repo) vs
    `plan-only` (manual handoff). If not inside tmux, do **not** offer "go" — keep the
-   issues on GitHub and tell the human how to relaunch inside tmux (or continue
+   issues in the store and tell the human how to relaunch inside tmux (or continue
    plan-only). On "go", switch to `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`.
 
 ## Reminders the wrapper exists to put in your face

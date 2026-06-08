@@ -2,7 +2,7 @@
 Agent TDD issue template (§5.2 of PROTOCOL.md).
 
 Root copies this file, replaces the `<...>` placeholders, and feeds it to
-`gh issue create --body-file <path>`.
+`atdd issue create --body-file -`.
 
 Section rules:
   - Subject Under Test: repo-root-relative POSIX path, optionally `path:identifier`.

@@ -4,7 +4,7 @@ This document is the canonical, agent-actionable spec of the Agent TDD workflow.
 
 If WHITEPAPER.md and this file disagree, this file wins (the whitepaper is the design rationale; this is the operational spec).
 
-> **Standing instruction for Root:** the conversation is ephemeral, the disk is durable. No decision lives only in your conversation memory. Externalize state to `.agent-tdd/<root-id>/` and to GitHub labels at every step. Re-derive working state from disk + `gh` at every phase boundary.
+> **Standing instruction for Root:** the conversation is ephemeral, the disk is durable. No decision lives only in your conversation memory. Externalize state to `.agent-tdd/<root-id>/` and to the local `atdd` store at every step. Re-derive working state from disk + the local `atdd` store at every phase boundary.
 
 ---
 
@@ -17,12 +17,12 @@ You are one of two layers in Agent TDD v0.10.0+. An upstream **Notes Agent** (`/
 Hard rules for the entire workflow:
 
 - **You are the sole human interface.** Test agents, impl agents, and rebase agents never communicate with the human directly. Every human-facing escalation goes through you.
-- **No decision lives only in conversation memory.** Externalize to `.agent-tdd/<root-id>/`, `meta.json`, status files, and GitHub labels. Your conversation may be compacted; the disk persists.
+- **No decision lives only in conversation memory.** Externalize to `.agent-tdd/<root-id>/`, `meta.json`, status files, and the local `atdd` store (labels live there now). Your conversation may be compacted; the disk persists.
 - **Re-read this file (`${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`) at every wave-phase transition** (Wave initiation, Gate 1 reached, Gate 2 reached, before spawning a new wave).
 - **Re-read role markdowns** (`${CLAUDE_SKILL_DIR}/../atdd/roles/*.md`) immediately before constructing a spawn prompt for that role.
 - **Human input during a wave is feedback for the next wave's planning, not a request to handle inline.** If the human types something while a wave is running, capture it as a backlog note for wave-housekeeping (§6); do not interrupt the wave.
-- **Never spawn additional impl agents for an issue.** The single-session/single-PR rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you re-spawning a test agent** in response to an `.aborted` status, bounded to one retry per issue per wave.
-- **Never amend or force-push merged commits.** Always create new commits and PRs.
+- **Never spawn additional impl agents for an issue.** The single-session/single-branch rule is inviolable. Test agents do not spawn other test agents. Impl agents do not spawn anything. The only sanctioned re-spawn is **you re-spawning a test agent** in response to an `.aborted` status, bounded to one retry per issue per wave.
+- **Never amend or force-push merged commits.** Always create new commits and new branches.
 
 ---
 
@@ -32,7 +32,7 @@ These six principles govern every judgment call you make. They override your ins
 
 The bar these principles defend: **the test surface this workflow produces must be a 1:1 mirror of production**. Strictness is the product. A green wave that papered over real bugs is a worse outcome than a paused wave that surfaced them.
 
-**P1 — Verification is sacred.** When a verification step the wave was *supposed to perform* (smoke, e2e, strict-mode build, integration check — anything specified in the issue body or Wave 0 plan) surfaces a real defect, the finding **belongs to this wave**. Gate 2 may not advance on a PR whose stated verification is incomplete or unverified.
+**P1 — Verification is sacred.** When a verification step the wave was *supposed to perform* (smoke, e2e, strict-mode build, integration check — anything specified in the issue body or Wave 0 plan) surfaces a real defect, the finding **belongs to this wave**. Gate 2 may not advance on a branch whose stated verification is incomplete or unverified.
 
 **P2 — Never weaken the contract to make a wave pass.** Pre-stubs, scope reductions, downgrading strict to lax, narrowing the set of leaves/files/modules under verification, or any change that makes failing tests pass without addressing root cause is **forbidden** as a resolution path. If verification surfaces real bugs (including bugs in code outside the issue's nominal subject), those bugs are in-scope until *proven impossible* to fix within the wave.
 
@@ -40,9 +40,9 @@ The bar these principles defend: **the test surface this workflow produces must 
 
 **P4 — Don't present compromise menus.** When you are tempted to write to the human "Option A: accept as-is. Option B: defer. Option C: downscope." — **stop.** Pick the action that goes deeper, take it, and report after. The human's only decision points are Wave 0 (scope and base) and termination (final integration). Not "which flavor of giving up should we choose."
 
-**P5 — `.done` ≠ `.merge-ready`.** A `.done` status from an impl agent means impl thinks it shipped; it does not mean you must merge as-is. Before driving Gate 2 on a PR, verify that the wave's stated verification actually fires and actually passes against this PR's branch. If it doesn't, the PR is **failed-quality**, not done — re-spawn impl with sharper feedback, file the upstream blocker as `agent-tdd:blocking-wave-<N>` (a *blocking* label, not `pending`), or surface to the human with a single recommendation per P6. Do not auto-merge.
+**P5 — `.done` ≠ `.merge-ready`.** A `.done` status from an impl agent means impl thinks it shipped; it does not mean you must merge as-is. Before driving Gate 2 on a branch, verify that the wave's stated verification actually fires and actually passes against this branch. If it doesn't, the branch is **failed-quality**, not done — re-spawn impl with sharper feedback, file the upstream blocker as `agent-tdd:blocking-wave-<N>` (a *blocking* label, not `pending`), or surface to the human with a single recommendation per P6. Do not integrate. (The Gate-2 `atdd integrate` union re-verify is the same check — do not double-run it; see §3.5 step 0.)
 
-**P6 — Escalate with a recommendation, not a question.** When you must surface to the human, state: "I need your input on X because Y is genuinely undecidable from code/context. My recommendation is Z because [specific reason]. Confirm or correct." Single recommendation. Not a menu. Applies to rebase ladder rung 3, second-pass abort, failure-rate guard, and any other escalation.
+**P6 — Escalate with a recommendation, not a question.** When you must surface to the human, state: "I need your input on X because Y is genuinely undecidable from code/context. My recommendation is Z because [specific reason]. Confirm or correct." Single recommendation. Not a menu. Applies to conflict ladder rung 3, second-pass abort, failure-rate guard, and any other escalation.
 
 ---
 
@@ -56,7 +56,7 @@ A single tmux server hosts everything. Sessions:
 - **`ws-root-<id>`** — your private workspace, one per Root. Created on demand by `spawn-test-agent.sh`. Contains:
   - `issue-<N>` — test agent for issue #N
   - `issue-<N>-PR` — impl agent for issue #N
-  - (transient) `rebase-<pr#>` — rebase agent for PR #pr#
+  - (transient) `rebase-<N>` — conflict/rebase agent for issue #N's impl branch
 
 You do NOT pollute the dashboard session with child windows. Workspace sessions can be noisy; the dashboard stays clean.
 
@@ -143,7 +143,7 @@ Written once during Wave 0; re-read at the start of each wave.
 - `root_id` is unique across concurrent Roots in this repo. `init-root.sh` claims it atomically via `mkdir` (race-safe under concurrent inits). The first Root is `root-1`; subsequent Roots get the next free `root-N`.
 - `task` matches `^[a-z0-9-]+$`. Used for the integration branch name `agent-tdd/<task>`.
 - `base` is set explicitly by the human in Wave 0. There is no default — Root must ask. Whatever the human names is what `init-root.sh` branches off and what §8 merges back into.
-- `gh_account` is the GitHub account name (as listed by `gh auth status`) under which all `gh` calls in this Root and its child agents will run. Set explicitly by the human in Wave 0 (Root may propose reusing the value from any prior `.agent-tdd/root-*/meta.json` in this repo). `init-root.sh` validates it against `gh auth status` and runs `gh auth switch --user <gh_account>` before persisting. Every spawned child agent receives `GH_ACCOUNT` in its task block and re-runs `gh auth switch --user "$GH_ACCOUNT"` before its own gh calls — necessary because parallel Roots in *other* repos may flip the global active account.
+- `gh_account` is retained ONLY as an opaque string identifying the GitHub account to use for the optional final hand-off PR (§8). It is no longer used anywhere in the inner flow — all inner-flow work-item state runs through the local `atdd` store, not GitHub. Set by the human in Wave 0 (Root may propose reusing the value from any prior `.agent-tdd/root-*/meta.json` in this repo). `init-root.sh` no longer validates it and no longer performs any account switch; it simply persists the string. Child agents do not receive it and do not switch accounts.
 - `max_waves` defaults to 10. Hard cap.
 - `wave_size_cap` defaults to 5. Per-wave parallel-agent cap.
 - `current_wave` is bumped at the start of each wave.
@@ -162,7 +162,7 @@ Written once during Wave 0; re-read at the start of each wave.
 main
 └── agent-tdd/<task>          ← Root branch (wave integration target)
     ├── issue-3-tests         ← off Root branch; pushed to origin by test agent
-    │   └── issue-3-impl      ← off issue-3-tests; impl PR targets agent-tdd/<task>
+    │   └── issue-3-impl      ← off issue-3-tests; integrated into agent-tdd/<task> by the Root
     ├── issue-7-tests
     │   └── issue-7-impl
     └── ...
@@ -173,8 +173,8 @@ Rules:
 - The Root branch is `agent-tdd/<task>` and is created off `<base>` in Wave 0.
 - All test branches are siblings off the Root branch.
 - Each impl branch stacks 2-deep on its paired test branch. **This is the only stacking allowed.**
-- All impl PRs target the Root branch, not `main`.
-- Test branches do not get their own PRs. The issue body's `Test Branch` section links to the test branch SHA.
+- All impl branches are integrated into the Root branch (via the Root's `atdd integrate` — a `git merge --no-ff`), not into `main`. There is no PR object in the inner flow.
+- Test branches are not integrated on their own. The issue body's `Test Branch` section links to the test branch SHA.
 - **Test branches must be pushed to `origin` by the test agent** before it spawns the impl agent. Each agent works in a separate `git worktree` that fetches from `origin`; there is no shared filesystem between worktrees.
 
 ### 2.6 Status File Schemas
@@ -187,16 +187,19 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 {
   "issue": 3,
   "outcome": "success",
-  "pr_url": "https://github.com/org/repo/pull/42",
+  "branch": "issue-3-impl",
   "head_sha": "abc123...",
-  "ci_status": "passing",
-  "exit_reason": "tests green, CI passing"
+  "green": true,
+  "merged": false,
+  "exit_reason": "tests green locally"
 }
 ```
 
 - `outcome` ∈ `{"success", "failed", "aborted", "crashed"}` (matches the file extension)
-- `ci_status` ∈ `{"passing", "failing", "no-checks", "not-applicable"}`
-- For `.aborted`: `pr_url` is null, `ci_status` is `"not-applicable"`, `exit_reason` describes the test-contract problem.
+- `branch` is the impl branch the deliverable lives on (was `pr_url`). There is no PR object in the inner flow — the deliverable is a branch + green flag, recorded via `atdd record-green`.
+- `green` ∈ `{true, false, null}` (was `ci_status`): the impl reached a passing local check (`true`), the local check failed (`false`), or no check applies / not yet run (`null`). Set by the impl agent's local run via `atdd record-green`; never derived from CI.
+- `merged` (bool) — set by **you** (the Root) to `true` after a successful `atdd integrate` of this issue's branch into the Root branch (§3.4 Gate 2). The impl agent always writes it `false`.
+- For `.aborted`: `branch` is null, `green` is `null`, `exit_reason` describes the test-contract problem.
 - For `.crashed`: schema is smaller — `{issue, outcome:"crashed", exit_code, log_dir, cli, exit_reason}`. The supervisor writes it; `exit_code` is informational only (it is not the trigger). Treat it like `.failed` for the purposes of label transitions and Gate-1 counting. Inspect `log_dir` (contains `tmux.pane` — the captured pane scrollback — plus `agent.exitcode` and timing files) to diagnose.
 
 **Paused (`.paused`)** — transient; written by either test or impl agents:
@@ -224,14 +227,14 @@ All status writes are atomic: write to `<name>.tmp`, then `mv` to `<name>`.
 This is the only phase where you converse freely with the human.
 
 1. **Ask the base branch — explicitly, every time.** Required as one of your first questions, before substantive spec discussion. Do **not** guess. Do **not** assume `main`. Do **not** read the current branch and use that. Phrase it directly to the human: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the answer; the literal value is passed to `init-root.sh` as `<base>`, persisted in `meta.json:base`, and merged back into during final integration (§8).
-2. **Ask the GitHub account — explicitly, every time.** Required, no default. `gh` supports multiple logged-in accounts; whichever was last selected by `gh auth switch` is "active" globally on this machine, possibly under a different repo's Root. Resolve it like this:
-   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from each (e.g. `jq -r '.gh_account // empty'`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo: '<account>'? (y/n, or name a different one)"`.
-   - **Otherwise**, run `gh auth status` and present the `Logged in to github.com account <name>` lines: `"Which GitHub account should I use for this Root? (gh auth status: <name1>, <name2>)"`.
-   - The literal answer is passed to `init-root.sh` as `<gh-account>`, persisted in `meta.json:gh_account`, and propagated to every spawned child agent. `init-root.sh` validates it and runs `gh auth switch --user <gh-account>`; you do not need to switch first.
+2. **Ask the GitHub account — once, only for the optional final hand-off PR.** The inner flow no longer touches `gh`; this account is used only if the workflow ends with the optional integration→base PR in §8. Resolve it like this:
+   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from each (e.g. `jq -r '.gh_account // empty'`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo for the final hand-off PR: '<account>'? (y/n, or name a different one)"`.
+   - **Otherwise**, ask: `"Which GitHub account should I use for the final hand-off PR (§8)?"`.
+   - The literal answer is passed to `init-root.sh` as `<gh-account>` and persisted in `meta.json:gh_account` as an opaque string. `init-root.sh` does not validate it or switch accounts; it is read only at §8.
 3. **Listen and clarify.** Discuss the feature/bug at spec level. Ask the questions a senior engineer would ask before writing tests: what's the expected behavior? Edge cases? What's the Subject Under Test (file or `path:symbol`)? What's already covered? What constitutes "done"?
 4. **Decide the Root task slug.** Ask the human if you're unsure. Validate against `^[a-z0-9-]+$`.
 5. **Initialize the Root.** Run `${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task> <base> <gh-account>`. All three arguments are required and come from the human's answers above. This:
-   - Validates the gh account and runs `gh auth switch --user <gh-account>`.
+   - Persists `gh_account` as an opaque string for the §8 hand-off PR (no validation, no account switch).
    - Creates `agent-tdd/<task>` off `<base>`, pushes to origin.
    - Creates `.agent-tdd/root-<id>/meta.json` (including `gh_account`).
    - Ensures `.agent-tdd/` is in the repo `.gitignore`.
@@ -249,8 +252,8 @@ For each wave (Wave 1 onward):
 3. **Apply scope discipline (§3.6).** Reject pairings likely to conflict; defer to subsequent waves.
 4. **Apply wave size cap.** Limit to `meta.json:wave_size_cap` (default 5). Defer overflow.
 5. **Create or activate issues.** For each chosen issue:
-   - If new: `gh issue create --body-file <(cat ${CLAUDE_SKILL_DIR}/../atdd/templates/ISSUE_TEMPLATE.md | render-substitutions)`.
-   - Add labels `agent-tdd:active-wave-<N>` and `agent-tdd:root-<id>` (label `agent-tdd:root-<id>` is added at issue creation; label `agent-tdd:pending` is removed when activating a backlog issue).
+   - If new: `atdd issue create --repo <repo> --title <title> --body-file - --label agent-tdd:root-<id>` (feeding the rendered `${CLAUDE_SKILL_DIR}/../atdd/templates/ISSUE_TEMPLATE.md` on stdin), or use the `root-create.sh` recipe which wraps it.
+   - Add labels via `atdd label add <ref> <label>`: `agent-tdd:active-wave-<N>` and `agent-tdd:root-<id>` (label `agent-tdd:root-<id>` is added at issue creation; label `agent-tdd:pending` is removed via `atdd label remove <ref> agent-tdd:pending` when activating a backlog issue).
 6. **Write the wave manifest.** `.agent-tdd/<root-id>/wave-<N>/manifest.json`:
    ```json
    {"wave": 1, "issues": [3, 7, 11], "expected_terminal_count": 3}
@@ -277,9 +280,9 @@ When a child agent (test or impl) discovers something during the wave, it follow
 | Discovery | Action by the discovering agent |
 |---|---|
 | Related to current issue ("this test needs more cases") | Comment on the existing issue. No new issue. |
-| Impl gave up | Open the PR with a "gave up" comment summarizing attempts; write `.failed`. |
-| Test malformed (impl agent's call) | No PR. Write `.aborted` with details. **You** then re-spawn the test agent with the abort details as feedback. |
-| Unrelated AND not implicated by this wave's verification | `gh issue create` with labels `agent-tdd:pending` and `agent-tdd:root-<id>`, link back to parent issue. **If the finding surfaced because this wave's smoke / e2e / strict-mode build hit it, it is NOT unrelated regardless of which file it lives in — it is wave debt. See §1.5 P1.** |
+| Impl gave up | Push the impl branch with a "gave up" note summarizing attempts; write `.failed` (`green:false`). |
+| Test malformed (impl agent's call) | No branch. Write `.aborted` with details. **You** then re-spawn the test agent with the abort details as feedback. |
+| Unrelated AND not implicated by this wave's verification | `atdd issue create` with labels `agent-tdd:pending` and `agent-tdd:root-<id>`, link back to parent issue. **If the finding surfaced because this wave's smoke / e2e / strict-mode build hit it, it is NOT unrelated regardless of which file it lives in — it is wave debt. See §1.5 P1.** |
 
 **Hard rule:** newly created issues are **static** during the current wave. They do not trigger any agent until a future wave activates them. Test agents do not spawn other test agents. Impl agents do not spawn anything. **You** are the only one who spawns, and only at wave boundaries (plus the bounded re-spawn for `.aborted`).
 
@@ -288,8 +291,8 @@ When a child agent (test or impl) discovers something during the wave, it follow
 #### Gate 1: `agent-terminal`
 
 Every agent in the wave has reached a terminal state:
-- ✅ `.done` — impl PR opened, CI passing
-- ❌ `.failed` — impl PR opened with "gave up" comment, OR PR opened but CI failing
+- ✅ `.done` — impl branch pushed, local check green (`atdd record-green`)
+- ❌ `.failed` — impl gave up (branch pushed with a "gave up" note, `green:false`), OR the local check failed
 - 🛑 `.aborted` — test contract malformed; **must be consumed by you** before counting:
   - Re-spawn the test agent once with abort feedback (resets the issue to in-flight; Gate 1 is re-evaluated when it finishes), OR
   - Escalate (second-pass abort): label the issue `agent-tdd:failed`, raise hand to human.
@@ -301,7 +304,7 @@ The wave-watcher counts terminal files and exits when `terminal_count >= expecte
 
 #### Gate 2: `wave-merged`
 
-All `.done` PRs have been merged into the Root branch. **You** drive this autonomously via the rebase ladder (§3.7) and only escalate on genuine semantic conflict or rebase-regression.
+All `.done` impl branches have been git-merged into the Root branch (via `atdd integrate`), union green-check passing post-merge. **You** drive this autonomously via the conflict ladder (§3.7) and only escalate on genuine semantic conflict or post-merge regression. For each `.done` issue: `atdd issue-done <ref>`, then `atdd integrate --root-branch agent-tdd/<task> --impl-ref <issue-ref> --worktree <root-worktree>` (a plain `git merge --no-ff` of the impl branch into the Root branch, followed by re-running the UNION of all merged issues' test commands on the integrated branch). On success, keep the merge and write `merged:true` into the issue's `.done` status. On conflict or union-red, climb §3.7.
 
 **Wave N+1 only fires after Gate 2.** Update your dashboard window name to reflect the gate state:
 - `root-<id>: wave-<N> (agent-terminal, merging…)`
@@ -313,19 +316,19 @@ All `.done` PRs have been merged into the Root branch. **You** drive this autono
 
 On Gate 1 (`agent-terminal`), perform in order:
 
-0. **Quality reconciliation (§1.5 P1, P5).** Before counting any `.done` PR as merge-eligible, verify that the wave's stated verification (the smoke / e2e / strict / integration step described in each issue body or in the Wave 0 plan) actually ran and actually passed against this PR's branch. If any verification was skipped, stubbed, scope-reduced, or surfaced findings the PR did not address: the PR is **not** `.done` — it is **failed-quality**. Re-engage per §1.5 P5: re-spawn impl with sharper feedback, file the blocker as `agent-tdd:blocking-wave-<N>`, or escalate per §1.5 P6 with a single recommendation. Do not advance to Gate 2 on a failed-quality PR. Do not propose downscoping, pre-stubs, or deferral-to-future-wave as the resolution (§1.5 P2).
+0. **Quality reconciliation (§1.5 P1, P5).** Before counting any `.done` branch as merge-eligible, verify that the wave's stated verification (the smoke / e2e / strict / integration step described in each issue body or in the Wave 0 plan) actually ran and actually passed against this branch. If any verification was skipped, stubbed, scope-reduced, or surfaced findings the impl did not address: the issue is **not** `.done` — it is **failed-quality**. Re-engage per §1.5 P5: re-spawn impl with sharper feedback, file the blocker as `agent-tdd:blocking-wave-<N>`, or escalate per §1.5 P6 with a single recommendation. Do not advance to Gate 2 on a failed-quality branch. Do not propose downscoping, pre-stubs, or deferral-to-future-wave as the resolution (§1.5 P2). Note: this P5 re-check and the Gate-2 `atdd integrate` union re-verify are the **same** verification — once you reach Gate 2, the `integrate` union run is authoritative; do not double-run the stated verification just because both steps mention it.
 
 1. **Process aborted issues.** For each `.aborted`:
    - First abort in this wave for this issue: re-spawn the test agent with the abort `exit_reason` as feedback. The issue returns to in-flight. Gate 1 is re-evaluated when the new test agent terminates.
    - Second abort in this wave for this issue: label `agent-tdd:failed`, comment on the issue with both abort reasons, escalate to human via dashboard window rename + `notify-send`.
 2. **Dedup static issues** created during the wave (§4.3 layer 2).
-3. **Drive Gate 2 (wave-merged).** For each `.done` PR, attempt `gh pr merge --squash --auto`. On conflict, follow the rebase ladder (§3.7).
+3. **Drive Gate 2 (wave-merged).** For each `.done` issue: `atdd issue-done <ref>`, then `atdd integrate --root-branch agent-tdd/<task> --impl-ref <issue-ref> --worktree <root-worktree>` (plain `git merge --no-ff` of the impl branch into the Root branch + union re-verify of all merged issues' commands on the integrated branch). On success, write `merged:true` into the issue's `.done` status. On conflict or union-red, follow the conflict ladder (§3.7).
 4. **Re-baseline.** Your cwd is already on `agent-tdd/<task>` (your Root worktree). Just pull: `git fetch origin && git pull --ff-only origin agent-tdd/<task>`. **No `git checkout`** — the main repo's main worktree is not yours to mutate.
 5. **Wave Review (autopilot).** Inspect the dedup'd backlog. Default: pick the next wave's issues yourself. Escalate to human ONLY if:
    - The backlog is empty (workflow may be terminating; see §8).
    - Issue selection is genuinely ambiguous (e.g. competing scopes that need human prioritization).
    - The wave produced unusually many failures (failure-rate guard, §8).
-6. **Wave-end cleanup.** `${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-end-cleanup.sh <root-id> <wave>`. Removes worktrees for all terminal-state issues, and for each `.done` issue whose impl PR is MERGED also deletes the per-issue branches (`issue-<N>-tests`, `issue-<N>-impl`) on local and `origin`. Branches for non-merged or non-`.done` issues are preserved (they may hold open-PR work or debugging context).
+6. **Wave-end cleanup.** `${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-end-cleanup.sh <root-id> <wave>`. Removes worktrees for all terminal-state issues, and for each `.done` issue whose impl branch is merged into the Root branch (`merged:true` in its status) also deletes the per-issue branches (`issue-<N>-tests`, `issue-<N>-impl`) on local and `origin`. Branches for non-merged or non-`.done` issues are preserved (they may hold un-integrated work or debugging context).
 7. **Bump `meta.json:current_wave` and fire Wave N+1**, OR terminate (§8).
 
 ### 3.6 Scope Discipline (issue partitioning)
@@ -336,24 +339,25 @@ Apply before spawning a wave:
 2. **File-path overlap heuristic.** If two issues' Subjects sit in the same module/directory and likely touch the same files, prefer sequential waves. Estimate overlap from the structured issue body and recent `git log` of those paths.
 3. **Wave size cap.** Limit to `meta.json:wave_size_cap` parallel agents (default 5). Larger candidate sets split across waves.
 
-Scope discipline is heuristic. Conflicts that slip through are handled by the rebase ladder (§3.7).
+Scope discipline is heuristic. Conflicts that slip through are handled by the conflict ladder (§3.7).
 
-### 3.7 Rebase-Failure Escalation Ladder
+### 3.7 Merge-Conflict Escalation Ladder
 
-When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
+Every merge in the inner flow is **your explicit `git merge`** via `atdd integrate` — there is no auto-merge. When you run `atdd integrate` for a `.done` issue in Gate 2, the outcome lands you on one of these rungs:
 
-| Rung | Conflict type | Action |
+| Rung | Outcome | Action |
 |---|---|---|
-| 1 | Trivial (mechanical: import order, formatting, lock files) | Add a temporary worktree off the main repo: `git -C "${REPO_ROOT}" worktree add "${STATE_DIR}/rebase-pr<#>" issue-<N>-impl`. Rebase, push, re-run CI via `gh pr checks --watch`. Merge if green. Remove the temp worktree afterwards. **Do not** mutate your own Root worktree's HEAD. |
-| 2 | Non-trivial but mechanical | Spawn a one-shot **rebase agent** (non-interactive agent CLI, single session, single PR, see `${CLAUDE_SKILL_DIR}/../atdd/roles/REBASE_AGENT_ROLE.md`). If green after rebase, merge. If not, escalate to rung 3. |
-| 3 | Semantic (e.g. two PRs implement an overlapping feature in incompatible ways) | Cannot resolve mechanically. Label PR `agent-tdd:rebase-blocked`. Name the offending PRs in the dashboard window title. Surface to the human with a **single recommendation** per §1.5 P6 — default recommendation: human resolves manually. Close-and-defer is a fallback only when the deferred PR's contribution is genuinely independent of the kept PR's quality bar. **Do not present "(a) resolve" and "(b) defer" as a menu.** |
-| 4 | Rebase regression (rebased cleanly, but CI now fails) | Label PR `agent-tdd:rebase-regression`. Escalate to human. **Do not** auto-spawn a fix agent — regressions imply the test contract may need adjustment, which is a human call. |
+| 0 | Clean merge (`integrate` merged with no conflict) | The `integrate` already ran the union re-verify. If union green → **keep**, write `merged:true` into the issue's `.done` status, done. (If union red after a clean merge → rung 4.) |
+| 1 | Trivial mechanical conflict (import order, formatting, lock files) | **You** resolve it in a temp worktree off the Root branch: `git -C "${REPO_ROOT}" worktree add "${STATE_DIR}/agent-tdd/<task>" agent-tdd/<task>`; `git -C "${STATE_DIR}/agent-tdd/<task>" merge issue-<N>-impl`; resolve the conflict; `git merge --continue`. Then re-run the union check on that worktree. Keep if green; remove the temp worktree afterwards. **Do not** mutate your own Root worktree's HEAD. No PR, no CI — the union check runs locally. |
+| 2 | Non-trivial but mechanical conflict | Spawn a one-shot **conflict/rebase agent** (non-interactive agent CLI, single session, single branch, see `${CLAUDE_SKILL_DIR}/../atdd/roles/REBASE_AGENT_ROLE.md`). It produces a clean merge of `issue-<N>-impl` into the Root branch and runs the union check. If green, keep; if not, escalate to rung 3. |
+| 3 | Semantic conflict (e.g. two branches implement an overlapping feature in incompatible ways) | Cannot resolve mechanically. Label the issue `agent-tdd:merge-blocked`. Name the offending branch refs in the dashboard window title. Surface to the human with a **single recommendation** per §1.5 P6 — default recommendation: human resolves manually (reference the branch refs, no PR). Close-and-defer is a fallback only when the deferred branch's contribution is genuinely independent of the kept branch's quality bar. **Do not present "(a) resolve" and "(b) defer" as a menu.** |
+| 4 | Post-merge regression (merged cleanly, but the union check now fails) | Label the issue `agent-tdd:merge-regression`. Escalate to human. **Do not** auto-spawn a fix agent — regressions imply the test contract may need adjustment, which is a human call. |
 
-**Wave N+1 does not fire while any rebase escalation is unresolved.**
+**Wave N+1 does not fire while any merge escalation is unresolved.**
 
 ---
 
-## 4. GitHub Issue Conventions
+## 4. Issue Conventions
 
 ### 4.1 Labels
 
@@ -363,24 +367,24 @@ When you attempt to merge a `.done` PR in Gate 2 and hit a conflict:
 | `agent-tdd:active-wave-<N>` | Currently being worked by Wave N |
 | `agent-tdd:root-<id>` | Owned by Root `<id>` (always present once Root touches the issue) |
 | `agent-tdd:done` | Implementation merged |
-| `agent-tdd:failed` | Impl gave up, second-pass abort, or otherwise unmergeable; PR open with explanation |
-| `agent-tdd:rebase-blocked` | PR can't be auto-rebased; human needed |
-| `agent-tdd:rebase-regression` | PR rebased clean but CI now fails; human needed |
+| `agent-tdd:failed` | Impl gave up, second-pass abort, or otherwise unmergeable; branch pushed with explanation |
+| `agent-tdd:merge-blocked` | Impl branch can't be auto-merged (semantic conflict); human needed |
+| `agent-tdd:merge-regression` | Impl branch merged clean but the union check now fails; human needed |
 
-**Label transitions** (driven by you):
+**Label transitions** (driven by you, via `atdd label add/remove <ref> <label>`):
 
 | Event | Transition |
 |---|---|
 | Wave start | `agent-tdd:pending` → `agent-tdd:active-wave-<N>` (also adds `agent-tdd:root-<id>` if missing) |
-| Impl `.done` (CI green) | `agent-tdd:active-wave-<N>` → `agent-tdd:done` |
+| Impl `.done` (green-check pass) | `agent-tdd:active-wave-<N>` → `agent-tdd:done` |
 | Impl `.failed` | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
 | Impl `.aborted` (second pass) | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
 | Impl `.crashed` | `agent-tdd:active-wave-<N>` → `agent-tdd:failed` |
-| Auto-merge clean | (no label change; `agent-tdd:done` already set) |
-| Rebase ladder rung 3 | `agent-tdd:rebase-blocked` added |
-| Rebase ladder rung 4 | `agent-tdd:rebase-regression` added |
+| Clean integrate | (no label change; `agent-tdd:done` already set) |
+| Conflict ladder rung 3 | `agent-tdd:merge-blocked` added |
+| Conflict ladder rung 4 | `agent-tdd:merge-regression` added |
 
-Cheap filter for backlog inspection: `gh issue list --label agent-tdd:pending --label agent-tdd:root-<id>`.
+Cheap filter for backlog inspection: `atdd issue list --label agent-tdd:pending --label agent-tdd:root-<id>`.
 
 ### 4.2 Structured Issue Template
 
@@ -418,7 +422,7 @@ When a test agent activates a pending issue, it updates **only** the `Test Branc
 
 Two layers:
 
-1. **Search-before-file (agent-side).** Before any `gh issue create`, the agent runs `gh issue list --label agent-tdd:pending --label agent-tdd:root-<id>` and inspects titles + structured fields. If a candidate dupe exists, it comments on the existing issue instead of filing a new one.
+1. **Search-before-file (agent-side).** Before any `atdd issue create`, the agent runs `atdd issue list --label agent-tdd:pending --label agent-tdd:root-<id>` and inspects titles + structured fields. If a candidate dupe exists, it comments on the existing issue instead of filing a new one.
 2. **Orchestrator pass (you, at wave completion).** Scan `agent-tdd:pending --label agent-tdd:root-<id>` issues created during this wave. Compare structured fields (Subject + Behavior + Type) for exact equality. Merge/close obvious dupes.
 
 The standardized Subject Under Test format makes layer 2 a cheap field-equality check, not fuzzy comparison.
@@ -450,7 +454,7 @@ Use `${CLAUDE_SKILL_DIR}/../atdd/recipes/spawn-test-agent.sh <root-id> <wave> <i
 5. Sends `cat ${CLAUDE_SKILL_DIR}/../atdd/roles/TEST_AGENT_ROLE.md` followed by the task block (issue number, absolute status dir, etc.) via `tmux send-keys`.
 
 The test agent then:
-- Reads the issue (`gh issue view <N>`).
+- Reads the issue (`atdd issue view <ref>`).
 - If `## Needs Clarification` exists in the body, writes `<status-dir>/issue-<N>.paused` and waits.
 - Else, writes red tests on the worktree, commits, pushes the branch, updates the issue's `Test Branch` section, **spawns the impl agent**, and self-closes.
 
@@ -464,15 +468,15 @@ The impl agent:
 - Iterates within one agent session (run tests, edit, re-run — that is normal work, not a forbidden retry).
 - Applies the **effort heuristic** (in IMPL_AGENT_ROLE.md): bounded effort, three terminal outcomes.
 - May **pause** (`.paused` with `from: "impl-agent"`) like a test agent — you answer via `tmux send-keys` to `ws-root-<id>:issue-<N>-PR` (see §6.1, §6.2). Bounded to 2 pauses per issue by its role contract.
-- Opens a PR if it has anything to ship.
-- Runs `gh pr checks --watch <pr#>` to wait for CI.
+- Pushes its impl branch if it has anything to ship.
+- Runs `atdd record-green <ref> --branch <B> --head-sha <S> --worktree <DIR>` after a passing local check (no PR, no CI — the deliverable is the branch + green flag).
 - Writes its terminal status file atomically, **then** self-closes (exits its session) — the supervisor kills the window after the CLI exits.
 
-### 5.4 Rebase agents (rung 2)
+### 5.4 Conflict/rebase agents (rung 2)
 
-You spawn these directly when an auto-rebase fails mechanically. Use the role markdown `${CLAUDE_SKILL_DIR}/../atdd/roles/REBASE_AGENT_ROLE.md`. Same single-session/single-PR rules. Scope is narrow: resolve the conflict in a temp worktree, push, watch CI. If green, merge; if not, escalate to rung 3 (semantic) or rung 4 (regression).
+You spawn these directly when a `git merge` fails on a non-trivial mechanical conflict. Use the role markdown `${CLAUDE_SKILL_DIR}/../atdd/roles/REBASE_AGENT_ROLE.md`. Same single-session/single-branch rules. Scope is narrow: resolve the conflict in a temp worktree, produce a clean merge of the impl branch into the Root branch, and run the union check. If green, keep; if not, escalate to rung 3 (semantic) or rung 4 (post-merge regression).
 
-When you build the rebase agent's task block, include `GH_ACCOUNT=<value-from-meta.json>` alongside the other inputs (`PR_NUMBER`, `ROOT_ID`, `WAVE`, etc.). The role contract requires the agent to run `gh auth switch --user "$GH_ACCOUNT"` before any gh call.
+When you build the conflict/rebase agent's task block, pass the branch refs and the union test commands (`ISSUE_REF`, `IMPL_BRANCH`, `ROOT_REF`, `ROOT_ID`, `WAVE`, etc.). No `gh` account is needed — the agent never touches `gh`.
 
 ### 5.5 Re-spawning aborted test agents
 
@@ -539,7 +543,7 @@ When you resume:
 Used for:
 - Answering paused agents.
 - Re-spawning aborted agents (kill old window, launch new one).
-- Requesting amendments after you review a PR.
+- Requesting amendments after you review an impl branch.
 
 ```bash
 # Answer a paused test agent
@@ -609,7 +613,7 @@ WS=${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh
 | Wave initiation, after spawning (§3.2 step 10) | `bash $WS running --detail "wave-<N>: <count> active"` (liveness heartbeat) |
 | A pause you cannot answer from context (§6.1 `EVENT=paused`, "Not answerable" branch) — *instead of* waiting on a human at your dashboard | `bash $WS paused-needs-proxy --question "<the question>" --recommendation "<your single recommendation>"` then keep waiting; the orchestrator answers via `tmux send-keys` into your window exactly as a human would, and you proceed |
 | A stuck wave you would escalate (§6.1 `EVENT=timeout` escalate branch) | `bash $WS stuck --detail "<diagnostic>" --recommendation "<recommendation>"` |
-| Rebase ladder rung 3 (semantic) or rung 4 (regression) (§3.7) | `bash $WS rebase-blocked --pr-url "<pr>" --detail "rung 3|4: <why>" --recommendation "<recommendation>"` |
+| Conflict ladder rung 3 (semantic) or rung 4 (post-merge regression) (§3.7) | `bash $WS rebase-blocked --pr-url "<branch-ref>" --detail "rung 3|4: <why>" --recommendation "<recommendation>"` (the `rebase-blocked` signal verb and `--pr-url` flag are the `write-signal.sh` contract; pass the impl branch ref since there is no PR) |
 | Final integration (§8) — **orchestrated Roots do NOT merge** | open the integration→base PR, then `bash $WS awaiting-merge-confirm --pr-url "<pr>" --head "$(git rev-parse HEAD)"` and **stop** (the orchestrator merges after the human confirms; see §8 and atdd-from-issue §0.6) |
 | An unrecoverable wave (failure-rate guard, §8) | `bash $WS failed --recommendation "<recommendation>"` and stop |
 
@@ -621,15 +625,15 @@ WS=${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh
 
 | Failure | Handling |
 |---|---|
-| Impl gave up (tests still red after varied attempts) | PR opened with "gave up" comment. Status `.failed`. Window self-cleans. Wave continues. |
-| Impl CI failed post-PR | Status `.failed` with `ci_status: failing`. PR open. You may retry once after auto-rebase if conflict-induced. |
-| Impl aborted (test malformed) | Status `.aborted`, no PR. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
+| Impl gave up (tests still red after varied attempts) | Impl branch pushed with a "gave up" note. Status `.failed`. Window self-cleans. Wave continues. |
+| Impl local check failed | Status `.failed` with `green: false`. Branch pushed. You may retry once after a clean re-merge if conflict-induced. |
+| Impl aborted (test malformed) | Status `.aborted`, no branch. You re-spawn test agent (max 1 retry per issue per wave). Second abort → `agent-tdd:failed` + escalate. |
 | Impl crashed (silent death) | The agent's interactive CLI session ended with no terminal status (any exit code — the trigger is status absence). The session supervisor removes any stale `.paused`, writes `.crashed` automatically, and runs `tmux kill-window`. Treat like `.failed`: label `agent-tdd:failed`. Inspect `<state-dir>/wave-<N>/logs/issue-<X>/{tmux.pane,agent.exitcode}` to diagnose. No automatic re-spawn. |
 | Test agent crash (silent death) | Status file missing; watcher does not advance until its 30-min hard ceiling fires (`EVENT=timeout`, §6.1). Inspect `<state-dir>/wave-<N>/logs/issue-<X>/tmux.pane` for the captured pane scrollback. |
-| Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged PRs exist and rebase escalations are resolved). |
+| Wave gates on completion, not success | A partially-failed wave still triggers Gate 2 + Wave N+1 (provided merged branches exist and merge escalations are resolved). |
 | Human-induced failure (human closes a paused agent without resolving) | Status file missing; wave blocks. Human must explicitly mark it failed: `touch <status-dir>/issue-<X>.failed`. |
-| Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` PR did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.agent-tdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
-| Rebase-blocked / rebase-regression | §3.7 escalation ladder. |
+| Strict verification (smoke / e2e / strict-mode build) surfaces real bugs that this wave's `.done` branch did not address | The wave is not done. Apply §1.5 P1, P3, P5: reproduce locally in your Root worktree, trace to root cause, document the trace in `.agent-tdd/<root-id>/feedback.md`. **Default action: re-spawn impl with the trace as sharpened feedback.** Do **not** open a defer-to-future-wave issue as the resolution (§1.5 P3 must be satisfied first). Do **not** narrow `scanned_dirs` / add pre-stubs / downgrade strict mode to make the existing impl pass — that is a §1.5 P2 violation. Escalate per §1.5 P6 only after the trace is documented. |
+| Merge-blocked / merge-regression | §3.7 escalation ladder. |
 
 **Stuck-wave hard ceiling:** the wave-watcher exits with `EVENT=timeout` after 30 minutes of wall-clock from invocation start without any terminal or paused event (per-invocation, not cumulative — see §6.1). On timeout, Root runs §6.1's health checklist on each non-terminal issue (wrapper PID alive, worker PID alive, worker CPU advancing in a 30s sample, no failure marker). If all four signals are green and the issue has not yet used its one-time self-extension this wave, Root silently re-issues the watcher (consuming the `<state-dir>/wave-<N>/extensions/issue-<X>` marker). Otherwise Root **must** escalate to the human (do not blindly re-loop the watcher). The default escalation recommendation is to manually write a `.failed` status for the dead agent(s) so the wave can advance, but the recommendation is per-case (see §6.1's `EVENT=timeout` block). The self-extension cap (one per issue per wave) means Root will surface to the human within 60 min wall-clock of any stuck issue, regardless of forward-progress signals.
 
@@ -648,7 +652,7 @@ On clean termination, you:
 1. Ask the human to confirm the final integration step (the merge of `agent-tdd/<task>` to `<base>`, where `<base>` is `meta.json:base` — the branch the human named in Wave 0; never assume `main`). Do not auto-merge. Recommend `gh pr create --base <base> --head agent-tdd/<task>` rather than `git merge` — `git merge` would require switching the main worktree's HEAD, which is not yours to do.
 
    **Orchestrated mode (`meta.json:orchestrated == true`): do NOT ask a human and do NOT merge.** Instead **open** the PR (`gh pr create --base <base> --head agent-tdd/<task>`), write the `awaiting-merge-confirm` signal (§6.5) with its url + head, and **stop** — skip steps 2–6 below. The orchestrator confirms the merge with the real human, runs `gh pr merge` itself, then runs `terminate-root.sh` and closes the SubIssue on your behalf (`${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md` §6). The irreversible merge-to-base is never yours in orchestrated mode.
-2. After human confirms and the PR is merged: close all `agent-tdd:done` issues that are tied to merged PRs.
+2. After human confirms and the PR is merged: close all `agent-tdd:done` issues that are tied to merged branches via `atdd issue close <ref> --reason completed`.
 3. **Run termination cleanup** if the human accepted the merge:
    ```bash
    cd "${REPO_ROOT}"   # leave your Root worktree before it gets removed
@@ -665,15 +669,15 @@ On clean termination, you:
 
 - **Root Agent** — the orchestrator (you). Lives in a tmux window initially named `root-<id>` (the name evolves as Root rewrites it to display state) inside whatever session the human launched the agent CLI from. Both the session name and the window's stable tmux ID are recorded by `init-root.sh` as `meta.json:root_tmux_session` and `meta.json:root_tmux_window_id`; Root targets renames via the window ID, never via `<session>:root-<id>`. Operates in autopilot from Wave 1 onward. Sole human interface. **Cwd is `.agent-tdd/<root-id>/root/`**, a private worktree on `agent-tdd/<task>`. Does not mutate the main worktree's HEAD.
 - **Wave** — a bounded batch of parallel test+impl pairs; gated by `agent-terminal` then `wave-merged`.
-- **Static issue** — a GitHub issue created during a wave that does NOT trigger an agent until a future wave activates it.
+- **Static issue** — an `atdd` issue created during a wave that does NOT trigger an agent until a future wave activates it.
 - **Pair** — one (test agent, impl agent) tuple working a single issue.
-- **Terminal state** — any of: `.done` (success), `.failed` (gave up or CI failed), `.aborted` (test malformed), `.crashed` (impl agent's session ended with no terminal status written — status absence, not exit code, is the trigger; written by the session supervisor, which also removes any stale `.paused`). Paused is **not** terminal.
+- **Terminal state** — any of: `.done` (success), `.failed` (gave up or local check failed), `.aborted` (test malformed), `.crashed` (impl agent's session ended with no terminal status written — status absence, not exit code, is the trigger; written by the session supervisor, which also removes any stale `.paused`). Paused is **not** terminal.
 - **Agent-terminal (Gate 1)** — every agent in the wave has reached a terminal state.
-- **Wave-merged (Gate 2)** — all `.done` PRs have been merged to the Root branch.
-- **Single-session, single-PR rule** — an impl agent runs one agent session and produces at most one PR; iteration within the session is permitted, spawning new agents is not.
+- **Wave-merged (Gate 2)** — all `.done` impl branches git-merged into the Root branch (via `atdd integrate`), union green-check passing post-merge.
+- **Single-session, single-branch rule** — an impl agent runs one agent session and produces at most one impl branch; iteration within the session is permitted, spawning new agents is not.
 - **Effort heuristic** — the "don't work too hard" rule that bounds an impl agent's iteration before it terminates as `aborted` or `gave-up`. See `${CLAUDE_SKILL_DIR}/../atdd/roles/IMPL_AGENT_ROLE.md`.
 - **Scope discipline** — the pre-wave check that partitions issues to minimize file-overlap conflicts (§3.6).
-- **Rebase-failure escalation** — the ladder you follow when a `.done` PR can't auto-merge cleanly (§3.7).
+- **Merge-conflict escalation** — the ladder you follow when a `.done` impl branch can't be merged cleanly into the Root branch via `atdd integrate` (§3.7).
 - **`${CLAUDE_SKILL_DIR}`** — the absolute path of the directory containing the skill's `SKILL.md`. Use this to reference protocol files, roles, recipes, and templates regardless of your current working directory. Under Claude Code this is set automatically by the harness; under OpenCode it is set by the agent-tdd plugin's `shell.env` hook so the same references work in both tools.
 
 ---
@@ -693,7 +697,7 @@ On clean termination, you:
 - [ ] Quality reconciliation per §3.5 step 0 before anything else (§1.5 P1, P5)
 - [ ] Process `.aborted` first (re-spawn or escalate)
 - [ ] Run dedup pass on static issues
-- [ ] Drive Gate 2: auto-merge `.done` PRs, climb rebase ladder on conflict
+- [ ] Drive Gate 2: `atdd issue-done` + `atdd integrate` each `.done` branch (set `merged:true`), climb conflict ladder on conflict/union-red
 - [ ] Re-baseline in your Root worktree (`git fetch && git pull --ff-only origin agent-tdd/<task>`)
 - [ ] Wave Review: pick next wave or terminate
 - [ ] Wave-end cleanup (`wave-end-cleanup.sh`: prune worktrees, delete merged issue branches local+remote)
@@ -716,7 +720,7 @@ On clean termination, you:
 
 **On termination:**
 - [ ] Ask human to confirm `agent-tdd/<task>` → `<base>` merge (`<base>` from `meta.json:base`; set explicitly in Wave 0 — no default)
-- [ ] Close `agent-tdd:done` issues tied to merged PRs
+- [ ] Close `agent-tdd:done` issues tied to merged branches (`atdd issue close <ref> --reason completed`)
 - [ ] Run `terminate-root.sh <root-id> <task>` after final merge confirmed (cd out of Root worktree first; recipe removes worktree, deletes branch local+remote, kills `ws-root-<id>` session)
 - [ ] Final dashboard rename + notification
 - [ ] Self-close after human confirms

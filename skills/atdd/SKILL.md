@@ -67,14 +67,11 @@ The human's first message (passed as `$ARGUMENTS`) is the seed. Read it, then:
 
 1. **Mirror back what you heard, briefly.** One paragraph. Confirm the Subject Under Test, expected behavior, success criteria.
 2. **Ask for the base branch — explicitly, every time.** Required as one of your first questions. Do **not** guess, do **not** assume `main`, do **not** use the current branch. Phrase it directly: `"Which branch should the integration branch be based on? (e.g. main, develop, release/2026-q2)"`. Wait for the human's answer before proceeding. The answer is passed verbatim to `init-root.sh` and recorded in `meta.json:base`; final integration (§8) merges back to this same branch.
-3. **Ask for the GitHub account — explicitly, every time.** Required, no default. `gh` supports multiple logged-in accounts; the active one is whichever account `gh auth switch` last selected on this machine — possibly under a different repo's Root. Resolve it like this:
-   - **First**, look for a previously-recorded value: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from the most recent one (e.g. with `jq -r '.gh_account // empty' <file>`). If any prior Root in this repo recorded a `gh_account`, propose reusing it: `"Use the same GitHub account as previous Roots in this repo: '<account>'? (y/n, or name a different one)"`. If the human says yes, use that.
-   - **Otherwise**, run `gh auth status` and show the human the list of `Logged in to github.com account <name>` lines. Phrase: `"Which GitHub account should I use for this Root? (gh auth status: <name1>, <name2>, ...)"`. Wait for the answer.
-   - Pass the answer verbatim to `init-root.sh` as the third argument. The recipe validates it against `gh auth status` and runs `gh auth switch --user <account>` itself; you do not need to switch first. The value is persisted as `meta.json:gh_account` and propagated to every spawned child agent.
+3. **Ask for the GitHub account — once, for the optional final hand-off PR only.** The inner workflow touches no GitHub account: work-item state lives in the local atdd store. The only GitHub touchpoint is the **final** integration→base PR at §8, if the human wants one. Ask for the account so it is recorded up front: `"Which GitHub account should I use if/when I open the final integration PR? (or 'none' to skip the PR)"`. If a prior Root in this repo recorded one, propose reusing it: `ls "${REPO_ROOT}/.agent-tdd"/root-*/meta.json 2>/dev/null` and read `gh_account` from the most recent (e.g. `jq -r '.gh_account // empty' <file>`). Pass the answer verbatim to `init-root.sh` as the third argument; the value is persisted as `meta.json:gh_account` and used only when opening the final PR.
 4. **Ask the questions a senior engineer would ask before writing tests.** Don't ask everything at once — pick the highest-leverage 2–3 questions. Examples: edge cases, error paths, what's already covered, what counts as "done."
 5. **Iterate until you and the human agree on a Wave 1 issue list.** Each Wave 1 issue is one Subject Under Test (file or `path:symbol`) + one-sentence Behavior + Type (unit | integration | property | regression). Apply scope discipline (§3.6 of PROTOCOL) when proposing parallel issues.
 6. **Decide the Root task slug.** Free-form ask: `"What should I call this task? (lowercase, hyphens, e.g. user-auth-jwt)"`. Validate against `^[a-z0-9-]+$`.
-7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, validates the gh account and switches to it, creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
+7. **Initialize the Root.** Run `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/init-root.sh <root-task-slug> <base-branch> <gh-account>`. All three arguments are required — the recipe has no defaults and will fail if any are omitted. This atomically claims your Root ID, records the gh account (for the final PR only), creates the integration branch (without touching the main worktree's HEAD), creates your private Root worktree at `.agent-tdd/<root-id>/root/`, writes `meta.json`, and writes `.agent-tdd/.gitignore` with `*`. The recipe prints your Root ID on stdout.
 8. **`cd` into your Root worktree.** Run `cd .agent-tdd/<root-id>/root/`. **From this point forward your cwd is the Root worktree, and every `git` command you run applies to the integration branch in that worktree.** The main repo's working tree is no longer yours to mutate. Your tmux window has already been renamed to `root-<id>` by `init-root.sh`; from now on, every dashboard rename in PROTOCOL.md targets the stable window ID stored in `meta.json:root_tmux_window_id` — never `<session>:root-<id>`.
 9. **Show the human the Wave 1 plan** (issue summaries) and **ask "go?"**. Wait for "go" (or equivalent affirmation).
 10. **On "go": transition to autopilot.** Re-read PROTOCOL.md §3.2 and proceed with Wave Initiation.
@@ -101,14 +98,14 @@ What lives where:
 | `roles/TEST_AGENT_ROLE.md` | Self-contained spawn prompt for test agents. Concatenate with per-issue task block. |
 | `roles/IMPL_AGENT_ROLE.md` | Self-contained spawn prompt for impl agents. Includes effort heuristic. |
 | `roles/REBASE_AGENT_ROLE.md` | Self-contained one-shot rebase agent prompt (rung 2 of §3.7 ladder). |
-| `recipes/init-root.sh` | Bootstrap Root: claim id, validate + switch gh account, create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
+| `recipes/init-root.sh` | Bootstrap Root: claim id, record gh account (for the final PR only), create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch agent CLI, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + agent CLI. |
 | `recipes/wave-watcher.sh` | Background-Bash event watcher. **Issue once per wave with `run_in_background=true`.** |
 | `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove child worktrees and delete merged issue branches (local+remote). |
 | `recipes/terminate-root.sh` | Termination cleanup: remove Root's worktree, delete integration branch (local+remote). Run once at §8. |
 | `recipes/notify-human.sh` | tmux rename-window + display-message + notify-send/osascript. |
-| `templates/ISSUE_TEMPLATE.md` | §5.2 structured issue body. Use with `gh issue create --body-file`. |
+| `templates/ISSUE_TEMPLATE.md` | §5.2 structured issue body. Use with `atdd issue create --body-file -` (or root-create.sh/sub-create.sh). |
 
 ---
 
@@ -151,7 +148,7 @@ Your conversation may be auto-compacted during a long workflow. The skill body (
 1. Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
 2. Re-read `.agent-tdd/<root-id>/meta.json` and the current wave's `manifest.json`.
 3. List the current wave's status dir: `ls -la .agent-tdd/<root-id>/wave-<N>/status/`.
-4. Run `gh issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>` to confirm in-flight issues.
+4. Run `atdd issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>` to confirm in-flight issues.
 
 The disk is your durable memory. Trust it over your conversation.
 
@@ -179,7 +176,7 @@ Do this in order, before anything else:
 
 1. **Parse `<root-id>`** from `$ARGUMENTS` (everything after `resume `). Validate against `^root-[a-z0-9-]+$`.
 2. **Verify `.agent-tdd/<root-id>/meta.json` exists.** If not, halt and tell the human: `"Resume failed: no state dir at .agent-tdd/<root-id>/. Re-run /atdd <spec> for a fresh Root."` Do not fall through to Wave 0.
-3. **Execute the Compaction defense steps** above — re-read `PROTOCOL.md`; re-read `meta.json` and the current wave's `manifest.json`; list `wave-<N>/status/`; run `gh issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>`.
+3. **Execute the Compaction defense steps** above — re-read `PROTOCOL.md`; re-read `meta.json` and the current wave's `manifest.json`; list `wave-<N>/status/`; run `atdd issue list --label agent-tdd:active-wave-<N> --label agent-tdd:root-<id>`.
 4. **Read the handoff brief** at `.agent-tdd/<root-id>/wave-<current_wave>/handoff.md`. This was written by the prior Root via `/atdd-compact` and contains a "Conversation gap-fill" section with anything that was live in conversation but not on disk, plus a "Next concrete action" section pointing to the exact PROTOCOL.md step to take next. The brief is best-effort, not load-bearing — if absent or unreadable, proceed from disk state alone.
 5. **`cd` into `meta.json:root_worktree`.** Your cwd from now on is the Root worktree on `agent-tdd/<task>`. (Do **not** run `init-root.sh` — that would attempt to claim a fresh root-id.)
 6. **Print a one-line phase preamble** in your first response (per the Mode protocol). The prior Root is currently running step 5 of `/atdd-compact` and will read your captured pane to verify the handoff worked — your preamble is the signal it looks for. Cite the right `<root-id>` and wave number.

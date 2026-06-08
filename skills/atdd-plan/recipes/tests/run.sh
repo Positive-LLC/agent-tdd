@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh — run all recipe tests. Usage: bash tests/run.sh
+# run.sh — run all atdd-plan recipe tests (Phase 1: atdd-backed). Usage: bash tests/run.sh
 set -uo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -11,308 +11,115 @@ for f in "${RECIPES_DIR}"/*.sh; do
 done
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== sub-adopt.sh =="
+echo "== root-create / sub-create / topology / depend =="
 setup_repo
-run sub-adopt.sh 'not-a-repo' 42 'acme/home#10';   assert_fail "rejects bad target-repo"
-reset_mock
-run sub-adopt.sh 'acme/otc' 'x' 'acme/home#10';     assert_fail "rejects non-numeric issue#"
-reset_mock
-run sub-adopt.sh 'acme/otc' 42 'acme/home';         assert_fail "rejects bad root-ref"
-reset_mock
-# happy path: parent is a root, child is a plain loose issue
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[]}'
-run sub-adopt.sh 'acme/otc' 42 'acme/home#10'
-assert_ok        "happy path exits 0"
-assert_out       "prints child ref" "acme/otc#42"
-assert_called    "labels child atdd:sub"      "issue edit 42 -R acme/otc --add-label atdd:sub"
-assert_called    "POSTs native sub-issue link" "-X POST repos/acme/home/issues/10/sub_issues"
-assert_called    "link uses child db id"       "sub_issue_id=42042"
-assert_called    "adds child to project"       "project item-add 7"
-reset_mock
-# guard: parent not a RootIssue
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[]}'
-run sub-adopt.sh 'acme/otc' 42 'acme/home#10';      assert_fail "rejects parent without atdd:root"
-reset_mock
-# guard: child is itself a RootIssue
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[{"name":"atdd:root"}]}'
-run sub-adopt.sh 'acme/otc' 42 'acme/home#10';      assert_fail "refuses to adopt a RootIssue as a sub"
-reset_mock
-# idempotency: already labelled + already linked -> no mutating label/link calls
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[{"name":"atdd:sub"}]}'
-fixture GET repos/acme/home/issues/10/sub_issues <<<'[{"id":42042}]'
-run sub-adopt.sh 'acme/otc' 42 'acme/home#10'
-assert_ok          "idempotent re-run exits 0"
-assert_not_called  "skips re-labelling"  "--add-label atdd:sub"
-assert_not_called  "skips re-linking"    "-X POST repos/acme/home/issues/10/sub_issues"
+STDIN_DATA='Root A body' run root-create.sh 'Root A' -; assert_ok "root-create A"; ROOT_A="$OUT"
+jchk "A is an OPEN RootIssue" '.state=="OPEN" and (.labels|index("atdd:root"))' "$(atdd issue view "$ROOT_A")"
+STDIN_DATA='Root B body' run root-create.sh 'Root B' -; assert_ok "root-create B"; ROOT_B="$OUT"
+STDIN_DATA='Sub body' run sub-create.sh acme/otc "$ROOT_A" 'Sub 1' -; assert_ok "sub-create under A"; SUB="$OUT"
+jchk "sub linked to A" '.parentRef=="'"$ROOT_A"'"' "$(atdd issue view "$SUB")"
+jchk "sub carries atdd:sub" '.labels|index("atdd:sub")' "$(atdd issue view "$SUB")"
+run sub-create.sh acme/otc "$SUB" 'Bad parent' -; assert_fail "sub-create rejects non-root parent"
+ANUM="${ROOT_A##*#}"; BNUM="${ROOT_B##*#}"
+run root-depend.sh "$BNUM" "$ANUM"; assert_ok "root-depend: B blocked by A"
+run _graph.sh; jchk "graph: A.transitive_blocking_count==1" \
+  '.issues[]|select(.ref=="'"$ROOT_A"'")|.transitive_blocking_count==1' "$OUT"
+run topology-available.sh; assert_ok "available ok"
+jchk "available has A, not blocked B" \
+  '(map(.ref)|index("'"$ROOT_A"'")) and ((map(.ref)|index("'"$ROOT_B"'"))|not)' "$OUT"
+run topology-next-urgent.sh; jchk "next-urgent -> A" 'length==1 and .[0].ref=="'"$ROOT_A"'"' "$OUT"
+run topology-blocking.sh "$ANUM"; jchk "A blocking -> B" 'map(.ref)|index("'"$ROOT_B"'")' "$OUT"
+run topology-blocked-by.sh "$BNUM"; jchk "B blocked-by -> A" 'map(.ref)|index("'"$ROOT_A"'")' "$OUT"
+run root-depend.sh "$ANUM" "$BNUM"; assert_fail "cycle rejected"
+run root-depend.sh "$ANUM" "$ANUM"; assert_fail "self-loop rejected"
+run root-undepend.sh "$BNUM" "$ANUM"; assert_ok "undepend"
+run root-undepend.sh "$BNUM" "$ANUM"; assert_ok "undepend idempotent noop"
+gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== issue-edit.sh =="
+echo "== sub-adopt (guards + idempotency) =="
 setup_repo
-run issue-edit.sh 'bad-ref' --title X;              assert_fail "rejects bad ref"
-reset_mock
-run issue-edit.sh 'acme/home#10';                   assert_fail "rejects no --title/--body-file"
-reset_mock
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-run issue-edit.sh 'acme/home#10' --title 'New Title'
-assert_ok      "edit title exits 0"
-assert_called  "calls gh issue edit --title" "issue edit 10 -R acme/home --title New Title"
-reset_mock
-# guard: unmanaged issue
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[]}'
-run issue-edit.sh 'acme/home#10' --title X;         assert_fail "refuses unmanaged issue"
-reset_mock
-# body via stdin "-"
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"labels":[{"name":"atdd:sub"}]}'
-STDIN_DATA='brand new body text' run issue-edit.sh 'acme/otc#42' --body-file -
-assert_ok      "edit body from stdin exits 0"
-assert_called  "passes new body to gh" "brand new body text"
-STDIN_DATA=""
+STDIN_DATA='RA' run root-create.sh 'RA' -; ROOT="$OUT"
+atdd issue create --repo acme/otc --title 'Loose' --porcelain >/dev/null   # acme/otc#1 (unlabelled)
+run sub-adopt.sh 'not-a-repo' 1 "$ROOT";   assert_fail "rejects bad target-repo"
+run sub-adopt.sh acme/otc x "$ROOT";       assert_fail "rejects non-numeric issue#"
+run sub-adopt.sh acme/otc 1 'badref';      assert_fail "rejects bad root-ref"
+run sub-adopt.sh acme/otc 1 "$ROOT";       assert_ok "adopt happy path"; assert_out "prints child ref" "acme/otc#1"
+jchk "child labelled atdd:sub" '.labels|index("atdd:sub")' "$(atdd issue view acme/otc#1)"
+jchk "child linked to root" '.parentRef=="'"$ROOT"'"' "$(atdd issue view acme/otc#1)"
+run sub-adopt.sh acme/otc 1 "$ROOT";       assert_ok "adopt idempotent re-run"
+NONROOT="$(atdd issue create --repo acme/home --title NR --porcelain)"
+run sub-adopt.sh acme/otc 1 "$NONROOT";    assert_fail "rejects parent without atdd:root"
+run sub-adopt.sh acme/home "${ROOT##*#}" "$ROOT"; assert_fail "refuses to adopt a RootIssue as a sub"
+gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== issue-close.sh =="
+echo "== issue-edit / issue-close / sub-unlink =="
 setup_repo
-run issue-close.sh 'bad-ref';                       assert_fail "rejects bad ref"
-reset_mock
-run issue-close.sh 'acme/home#10' --reason bogus;   assert_fail "rejects bad --reason"
-reset_mock
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"state":"open","labels":[{"name":"atdd:sub"}]}'
-run issue-close.sh 'acme/otc#42'
-assert_ok      "close open issue exits 0"
-assert_called  "calls gh issue close" "issue close 42 -R acme/otc --reason completed"
-reset_mock
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"state":"closed","labels":[{"name":"atdd:sub"}]}'
-run issue-close.sh 'acme/otc#42'
-assert_ok          "already-closed exits 0"
-assert_not_called  "no close call when already closed" "issue close 42"
-reset_mock
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"state":"closed","labels":[{"name":"atdd:root"}]}'
-run issue-close.sh 'acme/home#10' --reopen
-assert_ok      "reopen closed issue exits 0"
-assert_called  "calls gh issue reopen" "issue reopen 10 -R acme/home"
-reset_mock
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"state":"open","labels":[{"name":"atdd:sub"}]}'
-run issue-close.sh 'acme/otc#42' --reason not_planned
-assert_called  "maps not_planned -> 'not planned'" "--reason not planned"
+STDIN_DATA='RA' run root-create.sh 'RA' -; ROOT="$OUT"
+STDIN_DATA='SB' run sub-create.sh acme/otc "$ROOT" 'SB' -; SUB="$OUT"
+run issue-edit.sh "$ROOT" --title 'New Title'; assert_ok "edit title"
+jchk "title updated" '.title=="New Title"' "$(atdd issue view "$ROOT")"
+run issue-edit.sh "$ROOT"; assert_fail "edit needs --title/--body-file"
+run issue-edit.sh acme/home#999 --title X; assert_fail "edit missing issue"
+LOOSE="$(atdd issue create --repo acme/home --title L --porcelain)"
+run issue-edit.sh "$LOOSE" --title X; assert_fail "refuse unmanaged issue"
+STDIN_DATA='new body text' run issue-edit.sh "$SUB" --body-file -; assert_ok "edit body via stdin"
+jchk "body updated" '.body=="new body text"' "$(atdd issue view "$SUB")"
+run issue-close.sh "$SUB"; assert_ok "close sub (completed)"
+jchk "sub closed completed" '.state=="CLOSED" and .closeReason=="completed"' "$(atdd issue view "$SUB")"
+run issue-close.sh "$SUB" --reopen; assert_ok "reopen"
+jchk "sub reopened" '.state=="OPEN"' "$(atdd issue view "$SUB")"
+run issue-close.sh "$SUB" --reason not_planned; assert_ok "close not_planned"
+jchk "reason not_planned" '.closeReason=="not_planned"' "$(atdd issue view "$SUB")"
+run issue-close.sh "$SUB" --reason bogus; assert_fail "bad reason rejected"
+run issue-close.sh "$SUB" --reopen >/dev/null
+run sub-unlink.sh "$SUB" "$ROOT"; assert_ok "unlink"
+jchk "parent cleared" '.parentRef==null' "$(atdd issue view "$SUB")"
+run sub-unlink.sh "$SUB" "$ROOT"; assert_ok "unlink idempotent noop"
+gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== sub-unlink.sh =="
+echo "== ready-mark / ready-unmark =="
 setup_repo
-run sub-unlink.sh 'bad' 'acme/home#10';             assert_fail "rejects bad sub-ref"
-reset_mock
-run sub-unlink.sh 'acme/otc#42' 'bad';              assert_fail "rejects bad root-ref"
-reset_mock
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[{"name":"atdd:sub"}]}'
-fixture GET repos/acme/home/issues/10/sub_issues <<<'[{"id":42042}]'
-run sub-unlink.sh 'acme/otc#42' 'acme/home#10'
-assert_ok      "unlink exits 0"
-assert_called  "DELETEs sub_issue (singular path)" "-X DELETE repos/acme/home/issues/10/sub_issue"
-assert_called  "delete uses child db id"           "sub_issue_id=42042"
-reset_mock
-# idempotency: not currently linked
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/otc/issues/42  <<<'{"id":42042,"labels":[{"name":"atdd:sub"}]}'
-run sub-unlink.sh 'acme/otc#42' 'acme/home#10'
-assert_ok          "noop when not linked exits 0"
-assert_not_called  "no DELETE when not linked" "-X DELETE repos/acme/home/issues/10/sub_issue"
+STDIN_DATA='RA' run root-create.sh 'RA' -; ROOT="$OUT"
+STDIN_DATA='SB' run sub-create.sh acme/otc "$ROOT" 'SB' -; SUB="$OUT"
+run ready-mark.sh "$SUB"; assert_ok "ready-mark"
+jchk "marked ready" '.labels|index("atdd:ready")' "$(atdd issue view "$SUB")"
+run ready-mark.sh "$SUB"; assert_ok "ready-mark idempotent"
+run ready-mark.sh "$ROOT"; assert_fail "refuse to mark a non-SubIssue ready"
+run ready-unmark.sh "$SUB"; assert_ok "ready-unmark"
+jchk "unmarked" '(.labels|index("atdd:ready"))|not' "$(atdd issue view "$SUB")"
+run ready-unmark.sh "$SUB"; assert_ok "ready-unmark idempotent"
+gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== root-undepend.sh =="
+echo "== notebook head-set/get + index-update =="
 setup_repo
-run root-undepend.sh 'x' 11;                        assert_fail "rejects non-numeric"
-reset_mock
-run root-undepend.sh 10 10;                         assert_fail "rejects self-edge"
-reset_mock
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/home/issues/11 <<<'{"id":11011,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/home/issues/10/dependencies/blocked_by <<<'[{"id":11011}]'
-run root-undepend.sh 10 11
-assert_ok      "remove existing edge exits 0"
-assert_called  "DELETEs the dependency edge by db id" "-X DELETE repos/acme/home/issues/10/dependencies/blocked_by/11011"
-reset_mock
-# idempotency: edge absent
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-fixture GET repos/acme/home/issues/11 <<<'{"id":11011,"labels":[{"name":"atdd:root"}]}'
-run root-undepend.sh 10 11
-assert_ok          "noop when edge absent exits 0"
-assert_not_called  "no DELETE when edge absent" "dependencies/blocked_by/11011"
+STDIN_DATA='RA' run root-create.sh 'RA' -; ROOT="$OUT"
+STDIN_DATA=$'Notes line 1\nNotes line 2' run notebook-head-set.sh "$ROOT" -; assert_ok "head-set"
+run notebook-head-get.sh "$ROOT"; assert_ok "head-get ok"
+assert_out "head-get round-trips body" $'Notes line 1\nNotes line 2'
+run notebook-head-get.sh acme/home#999; assert_ok "head-get missing ok"; assert_out "missing -> empty" ""
+run notebook-index-update.sh; assert_ok "index-update"
+gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== ready-unmark.sh =="
+echo "== manifest member registry (--resolve-member / --register-member) =="
 setup_repo
-run ready-unmark.sh 'bad-ref';                      assert_fail "rejects bad ref"
-reset_mock
-fixture GET repos/acme/home/issues/10 <<<'{"id":10,"labels":[{"name":"atdd:root"}]}'
-run ready-unmark.sh 'acme/home#10';                 assert_fail "refuses non-SubIssue"
-reset_mock
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"labels":[{"name":"atdd:sub"},{"name":"atdd:ready"}]}'
-run ready-unmark.sh 'acme/otc#42'
-assert_ok      "unmark ready exits 0"
-assert_called  "removes ready label" "issue edit 42 -R acme/otc --remove-label atdd:ready"
-reset_mock
-# idempotency: not marked ready
-fixture GET repos/acme/otc/issues/42 <<<'{"id":42042,"labels":[{"name":"atdd:sub"}]}'
-run ready-unmark.sh 'acme/otc#42'
-assert_ok          "noop when not ready exits 0"
-assert_not_called  "no remove-label when not ready" "--remove-label atdd:ready"
-teardown_repo
-
-# ────────────────────────────────────────────────────────────────────────────
-echo "== manifest-ensure.sh (owner-agnostic lookup; user-owned project regression) =="
-setup_repo
-# fast path: manifest exists -> pure read, no project lookup
-run manifest-ensure.sh
-assert_ok         "fast path: prints existing manifest"
-assert_not_called "fast path makes no project lookup" "project view"
-reset_mock
-# bootstrap against a USER-owned project (regression: org-only GraphQL died here)
-rm -f "${WORK}/.agent-tdd/manifest.json"
-fixture_cmd project view <<<'{"id":"PVT_kwHO_user","title":"Cooksy"}'
-fixture_cmd issue list   <<<'[]'
-fixture_cmd issue create <<<'https://github.com/hn12404988/cooksy-hil/issues/9'
-run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
-assert_ok         "user-owned bootstrap exits 0"
-assert_called     "resolves via owner-agnostic gh project view" "project view 2 --owner hn12404988 --format json"
-assert_not_called "no org-only GraphQL lookup" "organization(login:"
-got="$(jq -r '.project.id + " " + .project.title + " " + .project.owner' "${WORK}/.agent-tdd/manifest.json" 2>/dev/null)"
-[[ "$got" == "PVT_kwHO_user Cooksy hn12404988" ]] \
-  && pass "manifest stores id+title+owner from lookup" \
-  || fail "manifest stores id+title+owner from lookup" "got: ${got}"
-reset_mock
-# bootstrap against an ORG-owned project goes through the same path
-rm -f "${WORK}/.agent-tdd/manifest.json"
-fixture_cmd project view <<<'{"id":"PVT_kwDO_org","title":"ACME Board"}'
-fixture_cmd issue list   <<<'[]'
-fixture_cmd issue create <<<'https://github.com/acme/home/issues/1'
-run manifest-ensure.sh 'https://github.com/orgs/acme/projects/7' 'acme/home'
-assert_ok         "org-owned bootstrap exits 0"
-assert_called     "org lookup uses the same owner-agnostic path" "project view 7 --owner acme --format json"
-reset_mock
-# gh writing a notice to stderr on a SUCCESSFUL call must not poison parsed stdout
-rm -f "${WORK}/.agent-tdd/manifest.json"
-fixture_cmd project view <<<'{"id":"PVT_kwHO_user","title":"Cooksy"}'
-fixture_cmd issue list   <<<'[]'
-fixture_cmd issue create <<<'https://github.com/hn12404988/cooksy-hil/issues/9'
-export MOCK_STDERR_NOISE='Notice: a new release of gh is available'
-run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
-unset MOCK_STDERR_NOISE
-assert_ok         "stderr notice on success does not poison the lookup JSON"
-reset_mock
-# gh succeeds but returns shapeless JSON (no .id) -> die, no manifest
-rm -f "${WORK}/.agent-tdd/manifest.json"
-fixture_cmd project view <<<'{"title":"x"}'
-run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
-assert_fail       "dies when lookup returns no .id"
-[[ ! -f "${WORK}/.agent-tdd/manifest.json" ]] \
-  && pass "no manifest written on shapeless lookup" \
-  || fail "no manifest written on shapeless lookup"
-reset_mock
-# valid JSON but no .title -> diagnostic die, not a silent set -e abort
-rm -f "${WORK}/.agent-tdd/manifest.json"
-fixture_cmd project view <<<'{"id":"PVT_x2"}'
-run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
-assert_fail       "dies when lookup JSON has no .title"
-grep -q 'could not resolve project title' "${WORK}/err" \
-  && pass "missing-title die carries a diagnostic" \
-  || fail "missing-title die carries a diagnostic" "stderr: $(tail -1 "${WORK}/err" 2>/dev/null)"
-reset_mock
-# lookup failure -> clean die, no manifest written
-rm -f "${WORK}/.agent-tdd/manifest.json"
-export MOCK_FAIL_GLOB='project view *'
-run manifest-ensure.sh 'https://github.com/users/hn12404988/projects/2' 'hn12404988/cooksy-hil'
-assert_fail       "dies when project lookup fails"
-[[ ! -f "${WORK}/.agent-tdd/manifest.json" ]] \
-  && pass "no manifest written on failed lookup" \
-  || fail "no manifest written on failed lookup"
-unset MOCK_FAIL_GLOB
-teardown_repo
-
-# ────────────────────────────────────────────────────────────────────────────
-echo "== manifest-ensure.sh member registry (orchestration: --resolve-member / --register-member) =="
-setup_repo
-# a fake local clone whose origin is acme/otc (git only — these subcommands never call gh)
-CLONE_OTC="${WORK}/clone-otc"; git init -q "$CLONE_OTC"
-git -C "$CLONE_OTC" remote add origin 'git@github.com:acme/otc.git'
-# resolve before register -> exit 3 (missing)
-run manifest-ensure.sh --resolve-member 'acme/otc'
-[[ "$RC" -eq 3 ]] && pass "resolve-member: unregistered -> exit 3" || fail "resolve-member: unregistered -> exit 3" "got RC=${RC}"
-[[ ! -s "$GH_LOG" ]] && pass "member ops make no gh calls" || fail "member ops make no gh calls" "gh log not empty"
-reset_mock
-# register (happy path)
-run manifest-ensure.sh --register-member 'acme/otc' "$CLONE_OTC"
-assert_ok   "register-member happy path exits 0"
-assert_out  "register-member prints the path" "$CLONE_OTC"
-got="$(jq -r '.members["acme/otc"].local_path' "${WORK}/.agent-tdd/manifest.json" 2>/dev/null)"
-[[ "$got" == "$CLONE_OTC" ]] && pass "manifest records member local_path" || fail "manifest records member local_path" "got: ${got}"
-reset_mock
-# resolve after register -> path, exit 0
-run manifest-ensure.sh --resolve-member 'acme/otc'
-assert_ok   "resolve-member after register exits 0"
-assert_out  "resolve-member prints recorded path" "$CLONE_OTC"
-reset_mock
-# register WRONG repo for this clone -> refuse (origin mismatch) — guards against wrong repo
-run manifest-ensure.sh --register-member 'acme/core' "$CLONE_OTC"
-assert_fail "register-member refuses origin/repo mismatch"
-grep -q 'origin is' "${WORK}/err" && pass "mismatch die carries a diagnostic" || fail "mismatch die carries a diagnostic" "stderr: $(tail -1 "${WORK}/err" 2>/dev/null)"
-reset_mock
-# register non-existent path -> die
-run manifest-ensure.sh --register-member 'acme/otc' "${WORK}/nope"
-assert_fail "register-member rejects missing path"
-reset_mock
-# resolve when the recorded clone's origin no longer matches -> exit 3 (stale)
-git -C "$CLONE_OTC" remote set-url origin 'git@github.com:acme/different.git'
-run manifest-ensure.sh --resolve-member 'acme/otc'
-[[ "$RC" -eq 3 ]] && pass "resolve-member: mismatched clone -> exit 3" || fail "resolve-member: mismatched clone -> exit 3" "got RC=${RC}"
-teardown_repo
-
-# ────────────────────────────────────────────────────────────────────────────
-echo "== _graph.sh (owner-agnostic node(id:) query; user-owned project regression) =="
-setup_repo
-fixture GET graphql <<'JSON'
-{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
-  {"content":{"number":10,"title":"Root A","state":"OPEN","createdAt":"2026-05-28T01:23:45Z","id":"I_a","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[{"name":"atdd:root"}]},"blockedBy":{"nodes":[]},"blocking":{"nodes":[{"number":12,"repository":{"nameWithOwner":"acme/home"},"state":"OPEN"}]}}},
-  {"content":{"number":12,"title":"Root B","state":"OPEN","createdAt":"2026-05-29T01:23:45Z","id":"I_c","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[{"name":"atdd:root"}]},"blockedBy":{"nodes":[{"number":10,"repository":{"nameWithOwner":"acme/home"},"state":"OPEN"}]},"blocking":{"nodes":[]}}},
-  {"content":{"number":11,"title":"Loose issue","state":"OPEN","createdAt":"2026-05-28T02:00:00Z","id":"I_b","repository":{"nameWithOwner":"acme/home"},"labels":{"nodes":[]},"blockedBy":{"nodes":[]},"blocking":{"nodes":[]}}}
-]}}}}
-JSON
-run _graph.sh
-assert_ok         "graph fetch exits 0"
-assert_called     "queries by project node id from the manifest (owner-agnostic)" "pid=PVT_x"
-assert_not_called "no org-only GraphQL query" "organization(login:"
-refs="$(jq -c '[.issues[].ref] | sort' <<<"$OUT" 2>/dev/null)"
-[[ "$refs" == '["acme/home#10","acme/home#12"]' ]] \
-  && pass "emits RootIssues only, parsed from node(id:) response shape" \
-  || fail "emits RootIssues only, parsed from node(id:) response shape" "got: ${refs}"
-tbc="$(jq -r '.issues[] | select(.ref=="acme/home#10") | .transitive_blocking_count' <<<"$OUT" 2>/dev/null)"
-[[ "$tbc" == "1" ]] \
-  && pass "transitive_blocking_count computed from new shape" \
-  || fail "transitive_blocking_count computed from new shape" "got: ${tbc}"
-teardown_repo
-
-# ────────────────────────────────────────────────────────────────────────────
-echo "== notebook-head-get.sh (Bug 1 regression: must return body, not empty) =="
-setup_repo
-fixture GET 'repos/acme/home/issues/1/comments?per_page=100&page=1' <<'JSON'
-[{"id":555,"body":"<!-- atdd-head: acme/home#10 -->\n\nNotes line 1\nNotes line 2"}]
-JSON
-run notebook-head-get.sh 'acme/home#10'
-assert_ok   "reads head comment exits 0"
-assert_out  "returns full body minus marker (regression: not empty)" $'Notes line 1\nNotes line 2'
-reset_mock
-# no matching comment -> empty output, still exit 0
-fixture GET 'repos/acme/home/issues/1/comments?per_page=100&page=1' <<<'[{"id":1,"body":"unrelated"}]'
-run notebook-head-get.sh 'acme/home#10'
-assert_ok   "no-match exits 0"
-assert_out  "no-match prints empty" ""
+CLONE="${WORK}/clone-otc"; git init -q "$CLONE"; git -C "$CLONE" remote add origin 'git@github.com:acme/otc.git'
+run manifest-ensure.sh --resolve-member acme/otc; assert_rc "resolve unregistered -> exit3" 3
+run manifest-ensure.sh --register-member acme/otc "$CLONE"; assert_ok "register happy path"; assert_out "prints path" "$CLONE"
+run manifest-ensure.sh --resolve-member acme/otc; assert_ok "resolve after register"; assert_out "prints recorded path" "$CLONE"
+run manifest-ensure.sh --register-member acme/core "$CLONE"; assert_fail "refuse origin/repo mismatch"
+git -C "$CLONE" remote set-url origin 'git@github.com:acme/different.git'
+run manifest-ensure.sh --resolve-member acme/otc; assert_rc "stale clone -> exit3" 3
+gh_clean
 teardown_repo
 
 summary

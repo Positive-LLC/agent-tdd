@@ -1,12 +1,16 @@
-# lib.sh — tiny test harness for the atdd-plan recipes. Sourced by run.sh.
-# No framework: a temp git repo + manifest, a mock `gh` on PATH, and grep-based
-# assertions against the recorded gh call log.
+# lib.sh — test harness for the atdd-plan recipes (Phase 1: atdd-backed).
+# No framework: a temp git repo + manifest, an isolated atdd store (ATDD_HOME),
+# the built `atdd` binary + a poison `gh` on PATH, and assertions against the
+# store via `atdd`. A planning recipe that still shells out to `gh` hits the
+# poison and fails — so this harness doubles as the recipe-level no-gh guard.
 
+ORIG_PATH="$PATH"
 TESTS_RUN=0
 TESTS_FAIL=0
 THIS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RECIPES_DIR="$(cd -- "${THIS_DIR}/.." && pwd)"
-MOCK_BIN="${THIS_DIR}/bin"
+# atdd binary: env override, else the sibling atdd-cli repo's debug build.
+ATDD_BIN="${ATDD_BIN:-$(cd -- "${THIS_DIR}/../../../../.." && pwd)/atdd-cli/target/debug/atdd}"
 
 pass() { TESTS_RUN=$((TESTS_RUN+1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
 fail() {
@@ -15,40 +19,34 @@ fail() {
   [[ -n "${2:-}" ]] && printf '         %s\n' "$2"
 }
 
-# Create a throwaway git repo with a standard manifest; mock gh on PATH.
 setup_repo() {
+  [[ -x "$ATDD_BIN" ]] || { echo "atdd binary not found/executable: $ATDD_BIN (build atdd-cli first)"; exit 1; }
   WORK="$(mktemp -d)"
-  GH_LOG="${WORK}/gh.log"; : > "$GH_LOG"
-  MOCK_FIXTURES="${WORK}/fixtures"; mkdir -p "$MOCK_FIXTURES"
-  unset MOCK_FAIL_GLOB MOCK_STDERR_NOISE
-  export GH_LOG MOCK_FIXTURES
+  export ATDD_HOME="${WORK}/atdd-home"
+  BIN="${WORK}/bin"; mkdir -p "$BIN"
+  ln -sf "$ATDD_BIN" "${BIN}/atdd"
+  export GH_POISON_LOG="${WORK}/gh-poison.log"; : > "$GH_POISON_LOG"
+  cat > "${BIN}/gh" <<'POISON'
+#!/usr/bin/env bash
+printf 'POISON: gh called in inner flow: %s\n' "$*" >> "${GH_POISON_LOG:-/dev/stderr}"
+exit 1
+POISON
+  chmod +x "${BIN}/gh"
+  export PATH="${BIN}:${ORIG_PATH}"
   git -C "$WORK" init -q
   git -C "$WORK" config user.email t@example.com
   git -C "$WORK" config user.name test
   mkdir -p "${WORK}/.agent-tdd"
-  cat > "${WORK}/.agent-tdd/manifest.json" <<'JSON'
-{
-  "project": { "url": "https://github.com/orgs/acme/projects/7", "number": 7, "id": "PVT_x", "title": "ACME", "owner": "acme" },
-  "home_repo": "acme/home",
-  "notebook_issue": { "url": "https://github.com/acme/home/issues/1", "number": 1 },
-  "labels": { "notebook": "atdd:notebook", "root": "atdd:root", "sub": "atdd:sub", "ready": "atdd:ready" }
+  ( cd "$WORK" && "${RECIPES_DIR}/manifest-ensure.sh" acme/home >/dev/null ) \
+    || { echo "FATAL: manifest bootstrap failed"; exit 1; }
 }
-JSON
-  export PATH="${MOCK_BIN}:${PATH}"
+teardown_repo() {
+  "$ATDD_BIN" daemon stop >/dev/null 2>&1 || true
+  export PATH="$ORIG_PATH"
+  [[ -n "${WORK:-}" ]] && rm -rf "$WORK"
 }
-teardown_repo() { [[ -n "${WORK:-}" ]] && rm -rf "$WORK"; }
-reset_mock() { : > "$GH_LOG"; rm -f "${MOCK_FIXTURES:?}"/*; }
 
-# fixture <METHOD> <endpoint>     (JSON body on stdin)  -> canned response
-fixture()      { cat > "${MOCK_FIXTURES}/$(printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____').json"; }
-# fixture_fail <METHOD> <endpoint>                      -> that call exits 1
-fixture_fail() { : > "${MOCK_FIXTURES}/$(printf '%s__%s' "$1" "$2" | tr '/:?&=' '_____').fail"; }
-# fixture_cmd <word1> <word2>  (stdout body on stdin) -> canned stdout for a
-# non-api subcommand, e.g. `fixture_cmd project view` answers `gh project view …`.
-fixture_cmd()  { cat > "${MOCK_FIXTURES}/CMD__${1}_${2}.json"; }
-
-# run <recipe.sh> [args...]   — runs inside the repo; sets RC and OUT.
-# Honors STDIN_DATA (piped to the recipe) if set.
+# run <recipe.sh> [args...] — runs inside the repo; sets RC and OUT. Honors STDIN_DATA.
 RC=0; OUT=""
 run() {
   local recipe="$1"; shift
@@ -58,12 +56,16 @@ run() {
     OUT="$( cd "$WORK" && "${RECIPES_DIR}/${recipe}" "$@" 2>"${WORK}/err" )" && RC=0 || RC=$?
   fi
 }
+# atdd <args> — run the CLI directly (for seeding + assertions), inside the repo.
+atdd() { ( cd "$WORK" && "$ATDD_BIN" "$@" ); }
 
-assert_ok()        { [[ "$RC" -eq 0 ]] && pass "$1" || fail "$1" "expected exit 0, got ${RC}: $(cat "${WORK}/err" 2>/dev/null | tail -1)"; }
-assert_fail()      { [[ "$RC" -ne 0 ]] && pass "$1" || fail "$1" "expected nonzero exit, got 0"; }
-assert_out()       { [[ "$OUT" == "$2" ]] && pass "$1" || fail "$1" "stdout='${OUT}' expected='$2'"; }
-assert_called()    { grep -qF -- "$2" "$GH_LOG" && pass "$1" || fail "$1" "gh log missing: $2"; }
-assert_not_called(){ ! grep -qF -- "$2" "$GH_LOG" && pass "$1" || fail "$1" "gh log unexpectedly contains: $2"; }
+assert_ok()   { [[ "$RC" -eq 0 ]] && pass "$1" || fail "$1" "expected exit 0, got ${RC}: $(tail -1 "${WORK}/err" 2>/dev/null)"; }
+assert_fail() { [[ "$RC" -ne 0 ]] && pass "$1" || fail "$1" "expected nonzero exit, got 0"; }
+assert_rc()   { [[ "$RC" -eq "$2" ]] && pass "$1" || fail "$1" "expected exit $2, got ${RC}"; }
+assert_out()  { [[ "$OUT" == "$2" ]] && pass "$1" || fail "$1" "stdout='${OUT}' expected='$2'"; }
+# jchk <desc> <jq-filter> <json>
+jchk() { if jq -e "$2" >/dev/null 2>&1 <<<"$3"; then pass "$1"; else fail "$1" "json=$3"; fi; }
+gh_clean() { if [[ ! -s "$GH_POISON_LOG" ]]; then pass "no gh in the inner flow"; else fail "gh leaked" "$(cat "$GH_POISON_LOG")"; fi; }
 
 summary() {
   echo

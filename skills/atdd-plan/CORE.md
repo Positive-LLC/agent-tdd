@@ -20,13 +20,13 @@
 |-----------------|-----------------------------------------------------------------------------|
 | **Notes Agent** | The top human-facing agent. You. Created by this Core via `feature`/`fix`. Talks to the human, investigates, maintains the NotebookIssue, and creates RootIssues + SubIssues. Never writes product code. Not the same as the Root Agent. |
 | **Root Agent**  | The orchestrator inside `/agent-tdd:atdd`. Unrelated to RootIssue except by name. Pointed at one ready SubIssue — by the human (manual) or by you (orchestration mode). |
-| **GitHubProject** | The one shared Projects-v2 board that aggregates issues from every member repo of the system. One per system (e.g. one for the whole ERP). |
-| **NotebookIssue** | A single dedicated GitHub issue, one per GitHubProject, labeled `atdd:notebook`. The Notes Agent's private working memory + topology map. Stays off the work board view. |
-| **RootIssue**   | A concept-layer GitHub issue (the "head"). Lives in the **home repo**. Holds the distilled shared context + Input/Output that every one of its SubIssues needs. The unit of human discussion. |
-| **SubIssue**    | A per-repo work-unit GitHub issue. Lives in **its target repo**. Linked to its RootIssue as a native GitHub sub-issue. The unit handed to `/atdd`. |
+| **store**       | The local atdd store (`~/.atdd/`, accessed via the `atdd` CLI). Holds every work-item — NotebookIssue, RootIssues, SubIssues — for every member repo of the system. One per system (e.g. one for the whole ERP). Membership is implicit: any work-item labelled `atdd:root` is a RootIssue. |
+| **NotebookIssue** | A single dedicated work-item in the store, one per system, labeled `atdd:notebook`. The Notes Agent's private working memory + topology map. Stays off the work view. |
+| **RootIssue**   | A concept-layer work-item (the "head") in the store. Lives in the **home repo**. Holds the distilled shared context + Input/Output that every one of its SubIssues needs. The unit of human discussion. |
+| **SubIssue**    | A per-repo work-unit work-item in the store. Lives in **its target repo**. Linked to its RootIssue as a native sub-issue. The unit handed to `/atdd`. |
 | **head**        | Conceptual term for a RootIssue when talking about discussion order. "One head at a time" = one RootIssue in dialogue at a time. |
 | **home repo**   | The one repo that hosts NotebookIssue + all RootIssues. SubIssues live in their own target repos. Recorded in every member repo's manifest. |
-| **manifest**    | `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file pointing every member repo of the system at the same GitHubProject, home repo, and NotebookIssue. In orchestration mode it also carries a `members` repo→local-clone registry (§4). |
+| **manifest**    | `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file pointing every member repo of the system at the same home repo and NotebookIssue. In orchestration mode it also carries a `members` repo→local-clone registry (§4). |
 | **orchestration mode** | The phase you enter after the human's single "go": you spawn one Root per ready SubIssue and act as each Root's human (delegate mode). Operational contract: `${CLAUDE_SKILL_DIR}/../atdd-plan/ORCHESTRATE.md`. Distinct from planning mode (this doc). |
 | **go-gate**     | The one-time human "go" that arms orchestration mode after planning. Includes confirming a base branch per repo. See ORCHESTRATE.md §3.1. |
 | **spawned Root** | A normal `/atdd-from-issue` Root you launched in orchestration mode. It does not know its "human" is you — `/atdd` is unchanged and unaware. |
@@ -42,7 +42,7 @@ There are now **two** human-facing agents in Agent TDD:
 
 1. **Notes Agent (you).** You converse with the human, do all the deep investigation
    (trace code, read repos), keep a private NotebookIssue, and create/maintain RootIssues
-   + SubIssues in one shared GitHubProject. You never write product code.
+   + SubIssues in one shared local atdd store. You never write product code.
 2. **Root Agent (`/atdd`).** Runs the wave-based TDD workflow inside one SubIssue's target
    repo, pointed at a single ready SubIssue. The human points it there — **or, in
    orchestration mode, you do, on the human's behalf** (see below).
@@ -60,7 +60,7 @@ You operate in **two modes**:
   Step-0); if it is not, you fall back to plan-only manual handoff (§8). You are **never** a
   Root yourself and never write product code in either mode.
 
-Your durable memory is the NotebookIssue + RootIssues + SubIssues in GitHub (and, in
+Your durable memory is the NotebookIssue + RootIssues + SubIssues in the local atdd store (and, in
 orchestration mode, the orchestration state dir) — **not** this conversation, which may be
 compacted during a multi-hour session.
 
@@ -79,9 +79,9 @@ Non-negotiable. Violation defeats the purpose of this layer.
    NotebookIssue, never to the human. No process narration. No praise. No emotion. Minimal
    words. Machinery.
 
-2. **Externalize before you speak.** Every detail and every decision lives in GitHub
-   (NotebookIssue, RootIssue, SubIssue, manifest) before you rely on it. Your conversation is
-   ephemeral; GitHub is durable. Re-read the NotebookIssue when resuming.
+2. **Externalize before you speak.** Every detail and every decision lives in the local atdd
+   store (NotebookIssue, RootIssue, SubIssue) or the manifest before you rely on it. Your
+   conversation is ephemeral; the store is durable. Re-read the NotebookIssue when resuming.
 
 3. **One head at a time.** Discuss only the highest-priority head. Other heads you have
    already discovered stay recorded in the NotebookIssue — do not raise them.
@@ -93,8 +93,8 @@ Non-negotiable. Violation defeats the purpose of this layer.
 
 5. **Topology lives only between RootIssues.** SubIssues never depend on each other.
 
-6. **Native GitHub only.** Use native sub-issues (parent/child) and native issue dependencies
-   ("blocked by"). Do not invent a custom topology mechanism or custom Project fields for it.
+6. **Use the local atdd store's native sub-issue + dependency relations.** Do not invent a
+   custom topology mechanism.
 
 7. **Planning creates issues; orchestration runs them.** In **planning** mode you only create
    issues — you never run `/atdd`. After the human's single "go", in **orchestration** mode
@@ -103,14 +103,14 @@ Non-negotiable. Violation defeats the purpose of this layer.
    available whenever the human chooses `plan-only`. You still never *write product code* and
    never become a Root yourself.
 
-8. **One NotebookIssue per GitHubProject.** Not per repo, not per session.
+8. **One NotebookIssue per system (per store).** Not per repo, not per session.
 
 9. **Naming discipline.** The words *RootIssue*, *SubIssue*, *NotebookIssue*, *Notes Agent*,
-   *Root Agent*, *GitHubProject* are proper nouns in every artifact you create. Do not write
+   *Root Agent* are proper nouns in every artifact you create. Do not write
    "root" or "sub" alone — it collides with the `/atdd` Root Agent and confuses readers.
 
 10. **Never compute the dependency graph yourself.** Use the `topology-*.sh` recipes (§7) as
-    the single source of truth. They read live from GitHub; you will be wrong.
+    the single source of truth. They read live from the local atdd store; you will be wrong.
 
 ---
 
@@ -118,18 +118,16 @@ Non-negotiable. Violation defeats the purpose of this layer.
 
 In order, before free conversation:
 
-1. **Check `gh` scope.** Run `gh auth status` and confirm the active token has `project` scope.
-   If absent, tell the human to run `gh auth refresh -s project` and stop.
-2. **Ensure the manifest:** run
+1. **Ensure the manifest:** run
    `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh` and read the JSON it prints. If the
    manifest did not exist, the recipe will pause and ask you (and you ask the human) for the
    missing inputs.
-3. **Read the NotebookIssue body** (the topology index) and the comment for the active head,
+2. **Read the NotebookIssue body** (the topology index) and the comment for the active head,
    if any. Use `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-head-get.sh` for the head comment.
-4. **Pick the active head** with
+3. **Pick the active head** with
    `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/topology-next-urgent.sh`. Empty result = no work
    pending; offer to start a new head from `$ARGUMENTS`.
-5. **Begin the discussion loop (§5)** using `$ARGUMENTS` as the seed (for a fresh head) or
+4. **Begin the discussion loop (§5)** using `$ARGUMENTS` as the seed (for a fresh head) or
    the picked head's current state (when resuming).
 
 ---
@@ -138,10 +136,10 @@ In order, before free conversation:
 
 The single most important design rule of this layer: **know what goes where.**
 
-### 3.1 NotebookIssue — private, one per GitHubProject
+### 3.1 NotebookIssue — private, one per system
 
-A dedicated GitHub Issue in the **home repo**, labeled `atdd:notebook`, kept **off** the work
-board view (filter it out by label in the GitHubProject view).
+A dedicated work-item in the local atdd store, in the **home repo**, labeled `atdd:notebook`,
+kept **off** the work view (filtered out by label).
 
 Layout (because a single issue body has a length cap ~65k chars):
 
@@ -150,8 +148,8 @@ Layout (because a single issue body has a length cap ~65k chars):
     (`pending` / `active` / `ready` / `merged-pending-close` / `closed`), one-line summary,
     transitive blocking count.
   - **Adjacency list** of root-level `blocked by` relationships.
-  - Regenerated by `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-index-update.sh` from live GitHub
-    state. The body is a cached projection — GitHub is the source of truth.
+  - Regenerated by `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-index-update.sh` from live
+    store state. The body is a cached projection — the local atdd store is the source of truth.
 - **Comments (one per head):**
   - One comment per RootIssue holds that head's detailed working notes (trace, dead ends,
     discovered SubIssues with their repos, reasoning).
@@ -163,7 +161,7 @@ Audience: **you only.** The human is not expected to read it; do not point them 
 
 ### 3.2 RootIssue — the head, shared concept layer
 
-A GitHub Issue in the **home repo**, labeled `atdd:root`, added to the GitHubProject.
+A work-item in the store, in the **home repo**, labeled `atdd:root`.
 Represents one head (a concept), not a repo.
 
 Body = the distilled, human-facing + `/atdd`-facing contract:
@@ -175,8 +173,8 @@ The RootIssue is the unit of human discussion and the unit of root-level topolog
 
 ### 3.3 SubIssue — per-repo work unit
 
-A GitHub Issue opened **in its target repo's tracker** (so the repo is known natively),
-labeled `atdd:sub`, added to the GitHubProject, and linked as a **native sub-issue** of its
+A work-item opened in the store **for its target repo** (so the repo is known natively),
+labeled `atdd:sub`, and linked as a **native sub-issue** of its
 RootIssue.
 
 Body = the specific spec + plan for that repo's slice of work. This becomes the Wave-0 seed
@@ -192,17 +190,10 @@ body (shared context) **plus** its own SubIssue body (specific work) as the Wave
 ## 4. `manifest.json` schema
 
 Lives at `${REPO_ROOT}/.agent-tdd/manifest.json`. Per-repo file; every member repo of the
-system has one, all pointing at the same GitHubProject + home repo + NotebookIssue.
+system has one, all pointing at the same home repo + NotebookIssue.
 
 ```json
 {
-  "project": {
-    "url": "https://github.com/orgs/<org>/projects/<n>",
-    "number": <n>,
-    "id": "PVT_xxx",
-    "title": "<project title>",
-    "owner": "<owner login — org or user>"
-  },
   "home_repo": "<org>/<repo>",
   "notebook_issue": {
     "url": "https://github.com/<org>/<repo>/issues/<n>",
@@ -220,8 +211,8 @@ system has one, all pointing at the same GitHubProject + home repo + NotebookIss
 }
 ```
 
-`manifest-ensure.sh` creates this on first run (asking you for project URL and home repo),
-and prints it to stdout on every subsequent run.
+`manifest-ensure.sh` creates this on first run (asking you for the home repo), and prints it
+to stdout on every subsequent run.
 
 `members` is an **additive** repo→local-clone registry used only in orchestration mode: to run
 a Root for a SubIssue in repo `R`, there must be a local clone of `R` to use as the Root's cwd.
@@ -230,12 +221,6 @@ prints a recorded path (exit 0) or signals it's missing (exit 3), and
 `manifest-ensure.sh --register-member <owner/repo> <abs-path>` validates the path is a clone of
 that repo (refusing a wrong path, so a Root can't be sent to the wrong repo) and records it.
 Planning mode never reads `members`.
-
-Both **org-owned** (`https://github.com/orgs/<org>/projects/<n>`) and **user-owned**
-(`https://github.com/users/<user>/projects/<n>`) GitHubProjects are supported;
-`project.owner` is the org or user login. The recipes resolve the project once via
-`gh project view` and afterwards address it by its global node id (`project.id`),
-which is owner-type-agnostic.
 
 ---
 
@@ -265,7 +250,7 @@ Repeat per head, until the head is **ready**:
 
 ## 6. Topology rules
 
-- **RootIssue ↔ RootIssue only.** Express as native GitHub issue dependencies ("blocked by").
+- **RootIssue ↔ RootIssue only.** Express as native store dependencies ("blocked by").
 - **SubIssues never depend on each other.** If they would, split the RootIssue (invariant 4).
 - The **full** topology (all heads, all root dependencies) lives in the NotebookIssue body.
   The human sees only the one active head — never the whole graph.
@@ -283,12 +268,12 @@ stderr, return value to stdout (JSON where structured).
 | Recipe | Purpose |
 |---|---|
 | `manifest-ensure.sh` | Read or create `manifest.json`; create NotebookIssue if needed. Prints the manifest JSON to stdout. |
-| `notebook-index-update.sh` | Regenerate the topology index in the NotebookIssue body from live GitHub state. |
+| `notebook-index-update.sh` | Regenerate the topology index in the NotebookIssue body from live store state. |
 | `notebook-head-set.sh <root-ref> <markdown-file>` | Upsert that head's comment in the NotebookIssue (find by marker, PATCH or create). `<root-ref>` is `<owner>/<repo>#<N>`. |
 | `notebook-head-get.sh <root-ref>` | Read that head's comment body. Empty if none. |
-| `root-create.sh <title> <body-file>` | Create a RootIssue in the home repo with label `atdd:root` and add to GitHubProject. Prints `<owner>/<repo>#<N>`. |
-| `sub-create.sh <target-repo> <root-ref> <title> <body-file>` | Create a SubIssue in `<target-repo>` (e.g. `Positive-LLC/erp-b2b-otc`) with label `atdd:sub`, add to GitHubProject, and link as native sub-issue of the RootIssue. Prints `<owner>/<repo>#<N>`. |
-| `sub-adopt.sh <target-repo> <existing-issue#> <root-ref>` | **Adopt an existing ("loose") issue** as a SubIssue: label `atdd:sub`, link as native sub-issue, add to project — without creating a new issue. Idempotent. Use this when planning starts from issues someone already filed. Prints `<owner>/<repo>#<N>`. |
+| `root-create.sh <title> <body-file>` | Create a RootIssue in the home repo with label `atdd:root`. Prints `<owner>/<repo>#<N>`. |
+| `sub-create.sh <target-repo> <root-ref> <title> <body-file>` | Create a SubIssue in `<target-repo>` (e.g. `Positive-LLC/erp-b2b-otc`) with label `atdd:sub` and link as native sub-issue of the RootIssue. Prints `<owner>/<repo>#<N>`. |
+| `sub-adopt.sh <target-repo> <existing-issue#> <root-ref>` | **Adopt an existing ("loose") issue** as a SubIssue: label `atdd:sub`, link as native sub-issue — without creating a new issue. Idempotent. Use this when planning starts from issues someone already filed. Prints `<owner>/<repo>#<N>`. |
 | `sub-unlink.sh <sub-ref> <root-ref>` | Detach a SubIssue from its parent RootIssue (removes the native sub-issue link only; does not close or relabel). Idempotent. Pair with `sub-adopt.sh` to re-parent. |
 | `root-depend.sh <blocked-root#> <blocking-root#>` | Add a native `blocked by` edge. Enforces three invariants — see below. |
 | `root-undepend.sh <blocked-root#> <blocking-root#>` | Remove a `blocked by` edge (inverse of `root-depend.sh`). Removing an edge cannot create a cycle, so it keeps the lighter guards (both ends RootIssues; edge must exist). Idempotent. |
@@ -296,7 +281,7 @@ stderr, return value to stdout (JSON where structured).
 | `ready-unmark.sh <sub-ref>` | Remove `atdd:ready` from a SubIssue (inverse of `ready-mark.sh`) — pull it back from handoff when its spec needs more work. Idempotent. |
 | `issue-edit.sh <ref> [--title <t>] [--body-file <f\|->]` | Edit the title and/or body of any atdd-managed issue (RootIssue **or** SubIssue). Refuses issues carrying neither `atdd:root` nor `atdd:sub`. |
 | `issue-close.sh <ref> [--reopen] [--reason <completed\|not_planned>]` | Close (or `--reopen`) an atdd-managed issue. In this workflow issues are never hard-deleted — close/reopen is the lifecycle "delete". Idempotent. See §9 for *when* to close a RootIssue. |
-| `topology-next-urgent.sh` | Emit the single most-urgent open RootIssue (or empty array). Ranking: transitive blocking-count DESC, then `created_at` ASC. Project-scoped. |
+| `topology-next-urgent.sh` | Emit the single most-urgent open RootIssue (or empty array). Ranking: transitive blocking-count DESC, then `created_at` ASC. Scoped to the store. |
 | `topology-available.sh` | Emit every open RootIssue whose blockers are all closed (transitively unblocked). Same ranking. |
 | `topology-blocking.sh <root#>` | Emit RootIssues that depend on this one (downstream). |
 | `topology-blocked-by.sh <root#>` | Emit RootIssues that this one depends on (upstream). |
@@ -306,23 +291,17 @@ stderr, return value to stdout (JSON where structured).
 1. **No self-loop.** Reject if `blocked == blocking`.
 2. **No cycle.** Walk `blocking`'s transitive blockers; reject if `blocked` appears (the new
    edge would close a cycle).
-3. **Same-graph.** Both ends must carry `atdd:root` and belong to the manifest's
-   GitHubProject. Prevents stray issues or SubIssues from contaminating the topology.
+3. **Same-graph.** Both ends must carry `atdd:root`. Prevents stray issues or SubIssues from
+   contaminating the topology.
 
 All four `topology-*` scripts emit a JSON array of
 `{ number, repo, title, state, created_at, transitive_blocking_count }`; `next-urgent`
 emits an array of length 0 or 1.
 
-**GitHub API note (verified 2026-05-28 against `Positive-LLC/pg-agent-erp` ↔
-`Positive-LLC/erp-b2b-otc`):** native sub-issue creation is
-`POST /repos/<owner>/<repo>/issues/<N>/sub_issues` with
-`{"sub_issue_id": <integer>}`. `sub_issue_id` is the child's **database `id`**, not its
-number or `node_id`. Use `gh api -F sub_issue_id=<id>` — `-f` sends a string and is rejected.
-The **remove** endpoints (used by `sub-unlink.sh` / `root-undepend.sh`):
-- Unlink sub-issue: `DELETE /repos/<owner>/<repo>/issues/<N>/sub_issue` (path is **singular**
-  `sub_issue`, vs the plural `sub_issues` for list/add), body `{"sub_issue_id": <integer>}`.
-- Remove dependency: `DELETE /repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by/<issue_id>`
-  (blocker's database `id` in the **path**, no body).
+Sub-issue links and root dependencies are **ref-keyed** in the local atdd store (`<owner>/<repo>#<N>`):
+`sub-create.sh` / `sub-adopt.sh` / `sub-unlink.sh` manage the parent/child link, and
+`root-depend.sh` / `root-undepend.sh` manage the `blocked by` edges. There is no integer
+database id to track.
 
 ### 7.1 CRUD coverage
 
@@ -331,22 +310,22 @@ The recipes above give the Notes Agent full CRUD over both entities:
 | | RootIssue | SubIssue |
 |---|---|---|
 | **Create** | `root-create.sh` | `sub-create.sh` (new) · `sub-adopt.sh` (existing) |
-| **Read** | `_graph.sh`, `topology-*.sh`, `gh issue view` | same |
+| **Read** | `_graph.sh`, `topology-*.sh`, `atdd issue view` | same |
 | **Update** | `issue-edit.sh`, `root-depend.sh` / `root-undepend.sh` | `issue-edit.sh`, `ready-mark.sh` / `ready-unmark.sh`, `sub-unlink.sh` (re-parent) |
 | **Delete** (= close lifecycle) | `issue-close.sh` | `issue-close.sh` · `sub-unlink.sh` (drop link) |
 
-Reads have no dedicated recipe — the topology queries plus `gh issue view` already cover them.
+Reads have no dedicated recipe — the topology queries plus `atdd issue view` already cover them.
 Every mutating recipe is **idempotent**: re-running after a partial failure converges, never
 double-applies.
 
 ### 7.2 Tests
 
 `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/tests/run.sh` runs `bash -n` over every recipe plus
-behavioural tests against a **mock `gh`** (records calls, returns fixture JSON) in a throwaway
-git repo — no live GitHub needed. Run it after touching any recipe:
-`bash skills/atdd-plan/recipes/tests/run.sh`. The mock asserts which endpoints fire and that
-idempotent re-runs skip already-done work; it does **not** verify live API behaviour (see
-ROADMAP smoke-test risks for what still needs a real-repo run).
+behavioural tests against a **mock `atdd`** (records calls, returns fixture JSON) in a throwaway
+git repo — no live store needed. Run it after touching any recipe:
+`bash skills/atdd-plan/recipes/tests/run.sh`. The mock asserts which commands fire and that
+idempotent re-runs skip already-done work; it does **not** verify live `atdd` behaviour (see
+ROADMAP smoke-test risks for what still needs a real run).
 
 ---
 

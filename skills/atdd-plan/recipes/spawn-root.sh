@@ -193,8 +193,8 @@ SUB_REF=${SUB_REF}
 
 You are running under the Notes-Agent orchestrator (AGENT_TDD_ORCHESTRATED=1 is
 set in your environment): your "human" is the orchestrator, not a person. Take
-base / gh account / task slug from your environment (AGENT_TDD_BASE,
-AGENT_TDD_GH_ACCOUNT, AGENT_TDD_SLUG); skip the human Wave-0 questions and the
+base / GitHub account (final-PR only) / task slug from your environment
+(AGENT_TDD_BASE, AGENT_TDD_GH_ACCOUNT, AGENT_TDD_SLUG); skip the human Wave-0 questions and the
 "go" wait; use AGENT_TDD_WS_SESSION as your workspace tmux session; and surface
 every escalation by running \${CLAUDE_SKILL_DIR}/../atdd/recipes/write-signal.sh
 (never address a person directly). At final integration (§8) write the

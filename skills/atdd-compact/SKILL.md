@@ -1,6 +1,6 @@
 ---
 name: atdd-compact
-description: Hand the in-flight Agent TDD workflow off to a fresh agent session by checkpointing state to PRs/issues and spawning a new tmux window that resumes via `/atdd resume root-<id>`. Use when the current Root's conversation has bloated mid-workflow but the wave isn't done.
+description: Hand the in-flight Agent TDD workflow off to a fresh agent session by checkpointing state to the local atdd store (issues + handoff brief) and spawning a new tmux window that resumes via `/atdd resume root-<id>`. Use when the current Root's conversation has bloated mid-workflow but the wave isn't done.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob
@@ -63,9 +63,9 @@ Then read, in order:
 1. `${STATE_DIR}/meta.json` (root_id, task, base, gh_account, current_wave, root_worktree, root_tmux_session, root_tmux_window_id).
 2. `${STATE_DIR}/wave-${WAVE}/manifest.json` (wave issues + expected_terminal_count).
 3. `ls -la ${STATE_DIR}/wave-${WAVE}/status/` (terminal/paused state).
-4. Active wave issues: `gh issue list --label agent-tdd:active-wave-${WAVE} --label agent-tdd:root-${ROOT_ID} --json number,title,state,labels`.
-5. For each active wave issue `<X>`, find its impl PR: `gh pr list --head issue-${X}-impl --json number,state,url,mergeStateStatus,headRefName --state all`. Some issues will have no PR yet (test agent still running, or impl pre-PR).
-6. Current rebase escalations (any PRs labeled `agent-tdd:rebase-blocked` or `agent-tdd:rebase-regression`).
+4. Active wave issues: `atdd issue list --label agent-tdd:active-wave-${WAVE} --label agent-tdd:root-${ROOT_ID} --json number,title,state,labels`.
+5. For each active wave issue `<X>`, read its work-item's branch/green/merged fields: `atdd issue view <X>` (the `issue-${X}-impl` branch, whether it is green, and whether it has merged into integration). Some issues will have no branch yet (test agent still running, or impl pre-branch). There are **no PRs in flight** in the inner flow.
+6. Current rebase escalations (any issues labeled `agent-tdd:rebase-blocked` or `agent-tdd:rebase-regression`).
 
 Re-read `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md` so the resume vocabulary is fresh in your context — you'll cite section numbers in the brief.
 
@@ -79,9 +79,9 @@ Template sections you must fill:
 
 - **Identity** — root-id, task, state-dir abs path, root worktree, base, gh_account, current wave.
 - **Phase** — your current phase preamble (the `[wave-N: ...]` line you'd be writing right now), last gate passed (`wave-init` / `gate-1` / `gate-2`), manifest path.
-- **Per-issue state** — one row per wave issue: status file or `(no terminal yet)`, agent live? (PID alive in `pgrep -af "issue-${X}"`), PR # + state + CI status, last expected transition, blockers.
-- **Pending decisions** — bullets. What needs Root judgment to advance? Examples: "rebase ladder rung 2 in flight on PR #42 — rebase agent spawned 12m ago in `ws-root-${ROOT_ID}:rebase-pr42`"; "issue #7 abort retries used 1/1 — second abort would escalate per §3.5"; "issue #11 paused-and-answered, watcher needs re-issuing".
-- **Next concrete action** — literal step from PROTOCOL with section number. Example: "PROTOCOL.md §3.5 step 3 — drive Gate 2: try `gh pr merge --squash --auto` on PR #42, #45. On conflict follow §3.7 ladder."
+- **Per-issue state** — one row per wave issue: status file or `(no terminal yet)`, agent live? (PID alive in `pgrep -af "issue-${X}"`), branch + green + merged state, last expected transition, blockers.
+- **Pending decisions** — bullets. What needs Root judgment to advance? Examples: "rebase ladder rung 2 in flight on issue #42 — rebase agent spawned 12m ago in `ws-root-${ROOT_ID}:rebase-42`"; "issue #7 abort retries used 1/1 — second abort would escalate per §3.5"; "issue #11 paused-and-answered, watcher needs re-issuing".
+- **Next concrete action** — literal step from PROTOCOL with section number. Example: "PROTOCOL.md §3.5 step 3 — drive Gate 2: merge the green `issue-42-impl`, `issue-45-impl` branches into integration (`atdd`). On conflict follow §3.7 ladder."
 - **Conversation gap-fill** — anything live in your conversation that is **not** durable on disk. Recent human directives (slash-commanded? freeform?), decisions made in the last few turns, work-in-progress reasoning. **If everything were also on disk you wouldn't need this skill — so this section will rarely be empty.**
 - **Pointers** — relevant PROTOCOL section anchors (§6.1, §3.5, §3.7), log bundle path, decisions log path.
 
@@ -97,9 +97,8 @@ bash ${CLAUDE_SKILL_DIR}/../atdd-compact/recipes/write-checkpoint.sh "${ROOT_ID}
 
 The recipe:
 
-- Copies the brief to `${STATE_DIR}/wave-${WAVE}/handoff.md` (durable, ungated by GitHub).
-- Comments the brief on every active wave issue.
-- Comments the brief on every open impl PR for those issues.
+- Copies the brief to `${STATE_DIR}/wave-${WAVE}/handoff.md` (durable, ungated by the store).
+- Comments the brief on every active wave issue (in the store).
 
 It prints a summary of where it posted to stderr; capture-pane that to verify.
 

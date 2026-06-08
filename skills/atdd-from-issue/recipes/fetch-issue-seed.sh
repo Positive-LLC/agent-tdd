@@ -1,82 +1,64 @@
 #!/usr/bin/env bash
-# fetch-issue-seed.sh — fetch a planned SubIssue + its parent RootIssue and
-# emit a combined Wave-0 seed on stdout.
+# fetch-issue-seed.sh — fetch a planned SubIssue + its parent RootIssue from the
+# local atdd store and emit a combined Wave-0 seed on stdout.
 #
-# Verifies the SubIssue carries BOTH `atdd:sub` (it is a planned SubIssue)
-# AND `atdd:ready` (the Notes Agent has signed off). Resolves the native
-# sub-issue parent and fetches its body too. Prints the seed as a single
+# Verifies the SubIssue carries BOTH `atdd:sub` and `atdd:ready`, resolves the
+# native sub-issue parent, and fetches its body too. Prints the seed as a single
 # markdown document on stdout; progress on stderr.
 #
 # Usage:
 #   fetch-issue-seed.sh <owner/repo> <issue#>
 #   fetch-issue-seed.sh <owner/repo>#<N>          (alt one-arg form)
-#
-# Exit codes:
-#   0  — seed printed
-#   non-zero — error message on stderr; nothing on stdout
 
 set -euo pipefail
 
 log() { printf '[fetch-issue-seed] %s\n' "$*" >&2; }
 die() { printf '[fetch-issue-seed] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
-command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
+command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
+command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 # --- parse args ---
 if [[ $# -eq 2 ]]; then
-  REPO="$1"
-  NUM="$2"
+  REPO="$1"; NUM="$2"
 elif [[ $# -eq 1 && "$1" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$ ]]; then
-  REPO="${BASH_REMATCH[1]}"
-  NUM="${BASH_REMATCH[2]}"
+  REPO="${BASH_REMATCH[1]}"; NUM="${BASH_REMATCH[2]}"
 else
   die "usage: fetch-issue-seed.sh <owner/repo> <issue#>   OR   <owner/repo>#<N>"
 fi
-
 [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "bad <owner/repo>: $REPO"
 [[ "$NUM"  =~ ^[0-9]+$ ]]                          || die "bad <issue#>: $NUM"
+SUB_REF="${REPO}#${NUM}"
 
 # --- fetch SubIssue ---
-log "fetching SubIssue ${REPO}#${NUM}"
-SUB="$(gh api "repos/${REPO}/issues/${NUM}" 2>&1)" \
-  || die "could not fetch ${REPO}#${NUM}: $SUB"
+log "fetching SubIssue ${SUB_REF}"
+SUB="$(atdd issue view "$SUB_REF")" || die "could not fetch ${SUB_REF}"
 
 # --- validate labels ---
-HAS_SUB="$(jq -r '.labels | map(.name) | index("atdd:sub") // empty' <<<"$SUB")"
-HAS_READY="$(jq -r '.labels | map(.name) | index("atdd:ready") // empty' <<<"$SUB")"
-[[ -n "$HAS_SUB" ]] \
-  || die "${REPO}#${NUM} is not labelled 'atdd:sub' — this is not a planned SubIssue. Use /agent-tdd:atdd directly with a free-form spec instead."
-[[ -n "$HAS_READY" ]] \
-  || die "${REPO}#${NUM} is not labelled 'atdd:ready' — the Notes Agent has not signed off on it. Resolve in /agent-tdd:fix first."
+[[ -n "$(jq -r '.labels | index("atdd:sub") // empty' <<<"$SUB")" ]] \
+  || die "${SUB_REF} is not labelled 'atdd:sub' — not a planned SubIssue. Use /agent-tdd:atdd directly with a free-form spec instead."
+[[ -n "$(jq -r '.labels | index("atdd:ready") // empty' <<<"$SUB")" ]] \
+  || die "${SUB_REF} is not labelled 'atdd:ready' — the Notes Agent has not signed off. Resolve in /agent-tdd:fix first."
 
 SUB_TITLE="$(jq -r '.title' <<<"$SUB")"
 SUB_BODY="$(jq -r '.body // ""' <<<"$SUB")"
-SUB_URL="$(jq -r '.html_url' <<<"$SUB")"
+SUB_URL="$(jq -r '.url' <<<"$SUB")"
 SUB_STATE="$(jq -r '.state' <<<"$SUB")"
 
 # --- resolve parent RootIssue via native sub-issue linkage ---
-PARENT_URL="$(jq -r '.parent_issue_url // empty' <<<"$SUB")"
-[[ -n "$PARENT_URL" ]] \
-  || die "${REPO}#${NUM} has no parent_issue_url — not linked as a native sub-issue. Re-create it via the Notes Agent's sub-create.sh recipe."
+PARENT_REF="$(jq -r '.parentRef // empty' <<<"$SUB")"
+[[ -n "$PARENT_REF" ]] \
+  || die "${SUB_REF} has no parent — not linked as a native sub-issue. Re-create it via sub-create.sh."
 
-log "resolving parent RootIssue"
-# parent_issue_url is an API URL (api.github.com/repos/.../issues/N); strip
-# the prefix and pass the path to `gh api`.
-PARENT_PATH="$(printf '%s' "$PARENT_URL" | sed -E 's|^https?://api\.github\.com/||')"
-PARENT="$(gh api "$PARENT_PATH" 2>&1)" \
-  || die "could not fetch parent ($PARENT_URL): $PARENT"
-
+log "resolving parent RootIssue ${PARENT_REF}"
+PARENT="$(atdd issue view "$PARENT_REF")" || die "could not fetch parent ${PARENT_REF}"
 PARENT_NUM="$(jq -r '.number' <<<"$PARENT")"
 PARENT_TITLE="$(jq -r '.title' <<<"$PARENT")"
 PARENT_BODY="$(jq -r '.body // ""' <<<"$PARENT")"
-PARENT_HTML="$(jq -r '.html_url' <<<"$PARENT")"
-# Derive parent repo nameWithOwner from its repository_url
-# (api.github.com/repos/<owner>/<name>).
-PARENT_REPO="$(jq -r '.repository_url' <<<"$PARENT" \
-  | sed -E 's|^https?://api\.github\.com/repos/||')"
+PARENT_HTML="$(jq -r '.url' <<<"$PARENT")"
+PARENT_REPO="$(jq -r '.repo' <<<"$PARENT")"
 
-log "SubIssue:  ${REPO}#${NUM} (state=${SUB_STATE}) '${SUB_TITLE}'"
+log "SubIssue:  ${SUB_REF} (state=${SUB_STATE}) '${SUB_TITLE}'"
 log "RootIssue: ${PARENT_REPO}#${PARENT_NUM} '${PARENT_TITLE}'"
 
 # --- emit seed ---
@@ -99,7 +81,7 @@ ${PARENT_BODY}
 
 ---
 
-## Work — this SubIssue: \`${REPO}#${NUM}\` (state: ${SUB_STATE})
+## Work — this SubIssue: \`${SUB_REF}\` (state: ${SUB_STATE})
 
 **${SUB_TITLE}**
 ${SUB_URL}

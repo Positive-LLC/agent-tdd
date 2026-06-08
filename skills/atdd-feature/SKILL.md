@@ -1,6 +1,6 @@
 ---
 name: atdd-feature
-description: Plan a new feature as the Notes Agent — investigate privately, anchor on a user-story, produce well-specced RootIssues + per-repo SubIssues in the configured GitHubProject, then hand a ready SubIssue to the Root Agent. Use when the human types `/agent-tdd:feature <free-form feature description>`. Result-driven dialogue only; investigation detail stays in the NotebookIssue.
+description: Plan a new feature as the Notes Agent — investigate privately, anchor on a user-story, produce well-specced RootIssues + per-repo SubIssues in the local atdd store, then hand a ready SubIssue to the Root Agent. Use when the human types `/agent-tdd:feature <free-form feature description>`. Result-driven dialogue only; investigation detail stays in the NotebookIssue.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash Read Write Edit Grep Glob
@@ -17,7 +17,7 @@ without any per-call remap.
 
 You are **not** the Root Agent. You never spawn child agents, never run
 `/atdd`, never write product code. You investigate, take notes, and produce
-GitHub issues. The human points `/agent-tdd:atdd-from-issue` at one ready
+work-items in the local atdd store. The human points `/agent-tdd:atdd-from-issue` at one ready
 SubIssue when they're ready — that handoff is manual.
 
 ## Feature lens (CORE.md §10.2)
@@ -54,34 +54,29 @@ active head).
 
 Follow CORE.md §2 immediately:
 
-1. `gh auth status` — confirm `project` scope is present. If not, stop and
-   tell the human to run `gh auth refresh -s project`.
-2. Check whether `.agent-tdd/manifest.json` already exists at the repo root:
+1. Check whether `.agent-tdd/manifest.json` already exists at the repo root:
    - **If yes**, run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh`
      with no args (it just prints the JSON).
-   - **If no**, ask the human (one short message) for:
-     (a) the GitHubProject URL, and
-     (b) the home repo (`owner/name` that will host NotebookIssue + RootIssues).
-     Then call `manifest-ensure.sh <project-url> <home-repo>` with those values.
-     Do **not** rely on the recipe's interactive `read` prompts — Bash-tool
-     stdin is not interactive.
-3. Read the NotebookIssue body (via the URL in the manifest) to restore prior
-   context.
-4. Run `topology-next-urgent.sh`. If it returns an issue, ask the human
+   - **If no**, ask the human (one short message) for the home repo
+     (`owner/name` that will host NotebookIssue + RootIssues). Then call
+     `manifest-ensure.sh <home-repo>` with that value. Do **not** rely on the
+     recipe's interactive `read` prompts — Bash-tool stdin is not interactive.
+2. Read the NotebookIssue body to restore prior context.
+3. Run `topology-next-urgent.sh`. If it returns an issue, ask the human
    whether to resume that head or start a fresh one from `$ARGUMENTS`. If
    empty, start a fresh one.
-5. **Anchor on the user story first.** Before any topology or
+4. **Anchor on the user story first.** Before any topology or
    investigation, agree on a one-sentence story: *"As a `<role>`, I want
    `<capability>` so that `<outcome>`."* Write it to the head's NotebookIssue
    comment as the first line. If the human can't articulate the story in
    one sentence, surface that — vague stories produce vague features, and
    you'd rather pause than plan around fog.
-6. **Draft anti-scope alongside scope.** As you propose SubIssues, also
+5. **Draft anti-scope alongside scope.** As you propose SubIssues, also
    propose what this feature will NOT do. Keep both lists in the head's
    NotebookIssue comment. The "out of scope" list is non-optional; it is
    copied into the RootIssue body before any SubIssue is marked
    `atdd:ready`.
-7. Enter the discussion loop (CORE.md §5).
+6. Enter the discussion loop (CORE.md §5).
 
 ## Reminders the wrapper exists to put in your face
 

@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # root-undepend.sh — remove a native `blocked by` edge between two RootIssues
-# (the inverse of root-depend.sh). Both arguments are RootIssue numbers in the
-# manifest's home repo.
-#
-# Removing an edge can never create a cycle, so this skips root-depend's cycle
-# check. It keeps the lighter guards: both ends must be RootIssues in the home
-# repo, and the edge must actually exist (idempotent no-op otherwise).
+# (inverse of root-depend.sh). Idempotent (no-op if the edge is absent).
 #
 # Usage:  root-undepend.sh <blocked-root#> <blocking-root#>
-#   Removes "<blocked> blocked by <blocking>".
 # Output: nothing on success; non-zero exit + stderr on failure.
 
 set -euo pipefail
@@ -16,8 +10,8 @@ set -euo pipefail
 log() { printf '[root-undepend] %s\n' "$*" >&2; }
 die() { printf '[root-undepend] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
-command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
+command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
+command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 [[ $# -eq 2 ]] || die "usage: root-undepend.sh <blocked-root#> <blocking-root#>"
 BLOCKED="$1"
@@ -32,30 +26,18 @@ MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
 HOME_REPO="$(jq -er '.home_repo' "$MANIFEST")"
 ROOT_LABEL="$(jq -er '.labels.root' "$MANIFEST")"
 
-# Both ends must be RootIssues in the home repo.
+BLOCKED_REF="${HOME_REPO}#${BLOCKED}"
+BLOCKING_REF="${HOME_REPO}#${BLOCKING}"
+
 assert_root() {
-  local n="$1" labels
-  labels="$(gh api "repos/${HOME_REPO}/issues/${n}" -q '.labels[].name' 2>&1)" \
-    || die "failed to fetch ${HOME_REPO}#${n}: $labels"
-  grep -qxF "$ROOT_LABEL" <<<"$labels" \
-    || die "${HOME_REPO}#${n} does not carry '${ROOT_LABEL}' — not a RootIssue"
+  local ref="$1" view
+  view="$(atdd issue view "$ref")" || die "${ref} not found"
+  jq -e --arg l "$ROOT_LABEL" '.labels|index($l)' >/dev/null <<<"$view" \
+    || die "${ref} is not a RootIssue (missing '${ROOT_LABEL}')"
 }
-assert_root "$BLOCKED"
-assert_root "$BLOCKING"
+assert_root "$BLOCKED_REF"
+assert_root "$BLOCKING_REF"
 
-# Resolve the blocker's database id (edge is keyed by db id, supplied in path).
-BLOCKING_DB_ID="$(gh api "repos/${HOME_REPO}/issues/${BLOCKING}" -q '.id' 2>&1)" \
-  || die "failed to fetch ${HOME_REPO}#${BLOCKING} database id: $BLOCKING_DB_ID"
-
-# Idempotency: only DELETE if the edge currently exists.
-CURRENT_IDS="$(gh api "repos/${HOME_REPO}/issues/${BLOCKED}/dependencies/blocked_by" -q '.[].id' 2>/dev/null || true)"
-if ! grep -qxF "$BLOCKING_DB_ID" <<<"$CURRENT_IDS"; then
-  log "${HOME_REPO}#${BLOCKED} is not blocked by ${HOME_REPO}#${BLOCKING} — noop"
-  exit 0
-fi
-
-log "removing edge: ${HOME_REPO}#${BLOCKED} blocked_by ${HOME_REPO}#${BLOCKING} (db_id=${BLOCKING_DB_ID})"
-gh api -X DELETE "repos/${HOME_REPO}/issues/${BLOCKED}/dependencies/blocked_by/${BLOCKING_DB_ID}" >/dev/null \
-  || die "failed to remove dependency"
-
+log "removing edge: ${BLOCKED_REF} blocked_by ${BLOCKING_REF}"
+atdd dep remove "$BLOCKED_REF" "$BLOCKING_REF" >/dev/null || die "failed to remove dependency"
 log "ok"

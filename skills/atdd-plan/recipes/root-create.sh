@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# root-create.sh — create a RootIssue in the home repo, label it `atdd:root`,
-# and add it to the manifest-configured GitHubProject.
+# root-create.sh — create a RootIssue in the home repo, labelled `atdd:root`,
+# in the local atdd store. Membership in the topology is implicit: any work-item
+# carrying `atdd:root` is a RootIssue (the GitHubProject is gone — see cli_v2.md).
 #
 # The body must already contain the distilled Input/Output and shared context
-# (see CORE.md §3.2). This recipe does not template the body — that's the
-# Notes Agent's job.
+# (see CORE.md §3.2). This recipe does not template the body.
 #
 # Usage:  root-create.sh <title> <body-file|->
 # Output: <owner>/<repo>#<N> on stdout (one line).
@@ -14,8 +14,8 @@ set -euo pipefail
 log() { printf '[root-create] %s\n' "$*" >&2; }
 die() { printf '[root-create] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
-command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
+command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
+command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
 
 [[ $# -eq 2 ]] || die "usage: root-create.sh <title> <body-file|->"
 TITLE="$1"
@@ -27,8 +27,6 @@ MANIFEST="${REPO_ROOT}/.agent-tdd/manifest.json"
 [[ -f "$MANIFEST" ]] || die "manifest not found (run manifest-ensure.sh first)"
 
 HOME_REPO="$(jq -er '.home_repo' "$MANIFEST")"
-PROJECT_OWNER="$(jq -er '.project.owner' "$MANIFEST")"
-PROJECT_NUMBER="$(jq -er '.project.number' "$MANIFEST")"
 ROOT_LABEL="$(jq -er '.labels.root' "$MANIFEST")"
 
 if [[ "$SRC" == "-" ]]; then
@@ -40,15 +38,8 @@ fi
 [[ -n "$BODY" ]] || die "body must be non-empty"
 
 log "creating RootIssue in ${HOME_REPO}"
-URL="$(gh issue create -R "$HOME_REPO" \
-  --title "$TITLE" \
-  --body  "$BODY" \
-  --label "$ROOT_LABEL")"
-NUMBER="$(basename "$URL")"
-log "created ${URL}"
+REF="$(printf '%s' "$BODY" | atdd issue create \
+  --repo "$HOME_REPO" --title "$TITLE" --body-file - --label "$ROOT_LABEL" --porcelain)" \
+  || die "failed to create RootIssue"
 
-log "adding to project ${PROJECT_OWNER}/#${PROJECT_NUMBER}"
-gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$URL" >/dev/null \
-  || die "failed to add RootIssue to project"
-
-printf '%s#%s\n' "$HOME_REPO" "$NUMBER"
+printf '%s\n' "$REF"

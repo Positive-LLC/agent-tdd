@@ -24,7 +24,7 @@
 | **the orchestrator** | You, in orchestration mode. The **human-proxy** for every Root you spawn. |
 | **spawned Root** | A normal `/atdd-from-issue` Root Agent you launched. It does not know its "human" is you — it talks to you exactly as it would to a person, via tmux + signals. |
 | **cohort** | The set of Roots spawned for the ready SubIssues of the **one** RootIssue you are currently executing. Bounded by `concurrent_root_cap`. |
-| **signal** | A spawned Root's `root-signal.json` — its liveness/escalation channel to you. GitHub stays the source of truth for "work done"; the signal is only liveness/intent. |
+| **signal** | A spawned Root's `root-signal.json` — its liveness/escalation channel to you. The local atdd store stays the source of truth for "work done"; the signal is only liveness/intent. |
 | **director / consultant** | The real human. You consult them only on genuine exceptions (§5). They confirm every base branch and every merge-to-base. |
 | **notes-id** | Your orchestration id (`notes-1`, `notes-2`, …), claimed by `orch-init.sh`, sibling to the Root layer's `root-N` ids in the same repo. |
 
@@ -68,11 +68,11 @@ Alongside CORE.md's 10 planning invariants. Non-negotiable.
    topology can re-sort live as SubIssues close — do **not** let a fresh pick jump
    heads mid-cohort.)
 4. **No decision lives only in conversation memory.** Externalize to the
-   orchestration state dir + each Root's signal + GitHub. Re-read this file and
-   re-derive state from disk + GitHub at every boundary (§7). Your session **will**
+   orchestration state dir + each Root's signal + the local atdd store. Re-read this file and
+   re-derive state from disk + the store at every boundary (§7). Your session **will**
    be compacted.
-5. **GitHub is the source of truth for "work done".** A SubIssue is done only when
-   its integration PR is merged and you `issue-close.sh` it. Signals + tmux carry
+5. **The local atdd store is the source of truth for "work done".** A SubIssue is done only
+   when its integration PR is merged and you `issue-close.sh` it. Signals + tmux carry
    liveness/escalation only — never "is it merged".
 6. **Final merge-to-base always escalates to the real human, per (repo, base).**
    Never auto-confirm a Root's §8 merge. Never batch the *decision* across different
@@ -254,7 +254,7 @@ Input/Output:
      tell the human: *"I can plan but not orchestrate from here — orchestration spawns
      Roots in tmux windows and this session isn't inside tmux. To orchestrate:
      relaunch inside tmux (`tmux new -s atdd`, then your CLI, then re-run
-     `/agent-tdd:fix`) and I'll resume from the issues on GitHub and offer `go`. Or
+     `/agent-tdd:fix`) and I'll resume from the issues in the store and offer `go`. Or
      continue **plan-only** and run `/agent-tdd:atdd-from-issue <ref>` yourself per
      ready SubIssue."* This **plan-only fallback** is exactly today's CORE.md §8
      manual handoff — no capability lost.
@@ -275,11 +275,10 @@ Input/Output:
    your tmux window, writes `meta.json`). Then fill `base_by_repo` (step 2). On
    `plan-only`: fall through to CORE.md §8.
 
-> **Single gh account (v1).** The whole run uses one gh account. Because every Root
-> switches to the *same* account, the global `gh auth switch` race (PROTOCOL.md §2.4)
-> is benign here. A SubIssue whose repo needs a *different* account is an exception —
-> escalate; the human runs it manually. (Per-repo accounts need GH_CONFIG_DIR
-> isolation propagated to every grandchild — a deferred enhancement.)
+> **Single gh account (v1).** The inner flow touches no GitHub account at all (work-item
+> state lives in the local atdd store). The one gh account captured at the go-gate is used
+> only for the **final** integration PR merge (§6). A SubIssue whose final PR needs a
+> *different* account is an exception — escalate; the human runs it manually.
 
 ### 3.2 The loop
 
@@ -384,9 +383,9 @@ for _ in $(seq 1 30); do tmux capture-pane -p -t "$W" 2>/dev/null | tail -3 | gr
 tmux send-keys -t "$W" '<your answer>' Enter
 ```
 **Durability:** also mirror the question + your answer to a comment on the SubIssue
-(`gh issue comment <sub_ref> --body "Q: … / A: …"`), so a compacted or relocated
-orchestrator can reconstruct the in-flight decision from GitHub (the local signal +
-keystroke are not enough — see WHITEPAPER §10.7).
+(`atdd comment add <sub_ref> --body "Q: … / A: …"`, or `--body-file -` for multi-line),
+so a compacted or relocated orchestrator can reconstruct the in-flight decision from the
+store (the local signal + keystroke are not enough — see WHITEPAPER §10.7).
 
 ### 4.2 `timeout` health check
 
@@ -471,10 +470,10 @@ When the cohort converges (`EVENT=cohort-ready`, or all members settled):
 
 ---
 
-## 7. Compaction defense (re-derive from disk + GitHub)
+## 7. Compaction defense (re-derive from disk + store)
 
-Your session may be auto-compacted mid-orchestration. The disk + GitHub are durable;
-the conversation is not. If you have lost track (you cannot write the §1.10 preamble):
+Your session may be auto-compacted mid-orchestration. The disk + the local atdd store are
+durable; the conversation is not. If you have lost track (you cannot write the §1.10 preamble):
 
 1. Re-read this file (`ORCHESTRATE.md`) and `CORE.md`.
 2. Re-read `.agent-tdd/<notes-id>/meta.json` → `current_rootissue`, `base_by_repo`,
@@ -483,13 +482,13 @@ the conversation is not. If you have lost track (you cannot write the §1.10 pre
    `signal_path` and check tmux liveness.
 4. **Reconcile against ground truth** (the registry alone is not trusted —
    invariant 4):
-   - `topology-available.sh` + `gh issue view <sub_ref> --json state` — which
+   - `topology-available.sh` + `atdd issue view <sub_ref>` (read `.state`) — which
      SubIssues are still open vs already closed (= done).
    - For each open SubIssue of `current_rootissue`, glob each member repo's
      `<repo_path>/.agent-tdd/*/meta.json` for `orchestrated==true && notes_id==<mine>
      && sub_ref==<that>` — this **rediscovers a Root the registry lost** (e.g. a crash
      mid-spawn) so it is never invisible.
-   - SubIssues marked `running` in the registry but already closed on GitHub → mark
+   - SubIssues marked `running` in the registry but already closed in the store → mark
      finalized. Ready SubIssues of `current_rootissue` not yet spawned (cap
      permitting) → spawn.
 5. Re-issue `roots-watcher.sh` if any member is non-terminal (the prior background
@@ -544,7 +543,7 @@ record `last_consumed_seq` → mirror Q/A to SubIssue comment → re-issue watch
 enforce the cohort wall-clock ceiling.
 
 **Always:** phase preamble; externalize before you rely on it; re-derive from disk +
-GitHub after any drift.
+the store after any drift.
 
 ---
 

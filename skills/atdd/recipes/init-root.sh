@@ -42,19 +42,11 @@ GH_ACCOUNT="$3"
 
 MAX_WAVES=10
 
-# --- validate gh account exists, then make it active ---
-# Parse `gh auth status` for "Logged in to github.com account <name>" lines.
-# Failing fast here is much friendlier than letting a child agent's `gh pr
-# create` fail mid-wave under the wrong identity.
-command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH"
-GH_STATUS="$(gh auth status 2>&1 || true)"
-if ! grep -qE "Logged in to github\.com account ${GH_ACCOUNT}( |$|\))" <<<"$GH_STATUS"; then
-  die "gh account '${GH_ACCOUNT}' is not logged in. Run \`gh auth login\` first, or pick a different account. \`gh auth status\` output:
-${GH_STATUS}"
-fi
-log "switching gh active account to ${GH_ACCOUNT}"
-gh auth switch --user "${GH_ACCOUNT}" >/dev/null 2>&1 \
-  || die "failed to \`gh auth switch --user ${GH_ACCOUNT}\`"
+# --- gh account ---
+# Phase 1: the inner flow has NO GitHub, so there is nothing to validate or
+# switch here. `<gh-account>` is retained only as an opaque string recorded in
+# meta.json for the single OPTIONAL final hand-off PR to base (PROTOCOL §8),
+# which is the one place `gh` may still be used. No `gh auth` in the inner flow.
 
 # --- capture caller's tmux session and window ID ---
 # The plugin does not prescribe a session name. Whatever session the human
