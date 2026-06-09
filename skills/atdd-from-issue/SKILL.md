@@ -23,6 +23,13 @@ with the deltas below. **All ten hard invariants from /atdd apply unchanged.**
 
 ---
 
+## Setup — ensure the `atdd` binary (before §0)
+
+Before the orchestration probe or any recipe, ensure the local `atdd` CLI is installed:
+run `bash ${CLAUDE_SKILL_DIR}/../ensure-atdd.sh` (see `${CLAUDE_SKILL_DIR}/../INIT_SETUP.md`).
+If `CLAUDE_SKILL_DIR` is unset (Codex), resolve it first per `${CLAUDE_SKILL_DIR}/../atdd/SKILL.md`
+step 0. Do not proceed until `atdd ping` works.
+
 ## 0. Orchestration probe (do this first)
 
 Check whether you were spawned by the Notes-Agent orchestrator rather than a human:

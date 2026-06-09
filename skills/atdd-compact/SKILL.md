@@ -38,6 +38,12 @@ Otherwise proceed.
 
 ---
 
+## Step 0 — ensure the `atdd` binary
+
+The checkpoint + resume recipes use the local `atdd` CLI. Ensure it's installed: run
+`bash ${CLAUDE_SKILL_DIR}/../ensure-atdd.sh` (see `${CLAUDE_SKILL_DIR}/../INIT_SETUP.md`).
+Do not proceed until `atdd ping` works.
+
 ## Step 1 — gather the truth
 
 Resolve these once at the top:

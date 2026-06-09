@@ -1,0 +1,34 @@
+name: Release
+
+# Manual only. Creates the GitHub Release (+ tag) for the version in package.json.
+# The release is the container; the CLI repo's build workflow attaches the
+# atdd-<os>-<arch> binaries + SHA256SUMS to it afterwards.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release v${{ steps.ver.outputs.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="v${{ steps.ver.outputs.version }}"
+          if gh release view "$v" >/dev/null 2>&1; then
+            echo "Release $v already exists — nothing to do."
+          else
+            gh release create "$v" \
+              --target "$GITHUB_SHA" \
+              --title "agent-tdd $v" \
+              --notes "Phase 1 — the inner flow runs on the local \`atdd\` store + plain git (no \`gh\`). Platform binaries (\`atdd-<os>-<arch>\`) + \`SHA256SUMS\` are attached by the CLI repo's build-binaries workflow."
+          fi

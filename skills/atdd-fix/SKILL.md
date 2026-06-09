@@ -53,7 +53,11 @@ related bugs you discovered along the way — goes into the NotebookIssue
 Treat it as the input to a new head (or, on resume, as feedback for the
 active head).
 
-Follow CORE.md §2 immediately:
+First, **ensure the `atdd` binary** is installed: run `bash ${CLAUDE_SKILL_DIR}/../ensure-atdd.sh`
+(see `${CLAUDE_SKILL_DIR}/../INIT_SETUP.md`) — the planning recipes below depend on it. Don't
+proceed until `atdd ping` works.
+
+Then follow CORE.md §2 immediately:
 
 1. Check whether `.atdd/manifest.json` already exists at the repo root:
    - **If yes**, run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh`
