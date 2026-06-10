@@ -10,6 +10,7 @@ die() { printf '[notebook-head-get] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
 command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
+source "$(dirname "${BASH_SOURCE[0]}")/_project-env.sh"
 
 [[ $# -eq 1 ]] || die "usage: notebook-head-get.sh <owner>/<repo>#<N>"
 ROOT_REF="$1"

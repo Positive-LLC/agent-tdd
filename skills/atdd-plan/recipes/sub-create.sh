@@ -15,6 +15,7 @@ die() { printf '[sub-create] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
 command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
+source "$(dirname "${BASH_SOURCE[0]}")/_project-env.sh"
 
 [[ $# -eq 4 ]] || die "usage: sub-create.sh <target-repo> <root-ref> <title> <body-file|->"
 TARGET_REPO="$1"
@@ -60,5 +61,16 @@ CHILD_REF="$(printf '%s' "$BODY" | atdd issue create \
 log "linking as native sub-issue of ${ROOT_REF}"
 atdd sub link "$ROOT_REF" "$CHILD_REF" >/dev/null \
   || die "failed to link sub-issue (parent=${ROOT_REF}, child=${CHILD_REF})"
+
+# Best-effort: record the target repo's membership in the active project so
+# `atdd repo where` / the dashboard reflect every repo the project spans. Needs a
+# local clone path; the orchestration member registry has it when available.
+# Non-fatal — planning often runs before any member clone is registered.
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TARGET_LOCAL="$("${HERE}/manifest-ensure.sh" --resolve-member "$TARGET_REPO" 2>/dev/null || true)"
+if [[ -n "$TARGET_LOCAL" ]]; then
+  atdd repo register "$TARGET_REPO" "$TARGET_LOCAL" >/dev/null 2>&1 \
+    && log "registered ${TARGET_REPO} into project ${ATDD_PROJECT:-default}" || true
+fi
 
 printf '%s\n' "$CHILD_REF"

@@ -118,10 +118,20 @@ Non-negotiable. Violation defeats the purpose of this layer.
 
 In order, before free conversation:
 
-1. **Ensure the manifest:** run
+1. **Ensure the manifest + resolve the active project:** run
    `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh` and read the JSON it prints. If the
    manifest did not exist, the recipe will pause and ask you (and you ask the human) for the
-   missing inputs.
+   missing inputs (the home repo, and — only when needed — the project).
+   - The recipe resolves which **atdd project** this repo's work lives in from the master
+     registry (`atdd repo where <home_repo>`): in **exactly one** project → it uses it
+     silently; in **no** project (first time) → it prompts for a slug (default `default`);
+     in **more than one** → it exits with the candidate slugs and the message
+     `ambiguous project — …`. **Only in that ambiguous case** do you present the candidates
+     to the human, ask which project, then run
+     `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/project-set.sh <chosen-slug>`. Never ask
+     when there is no genuine choice. The pick is pinned (`manifest.project_slug`) and not
+     re-asked on later runs; to switch deliberately, run `project-set.sh <other-slug>` (or set
+     `ATDD_PROJECT`). Every recipe scopes its `atdd` calls to this project automatically.
 2. **Read the NotebookIssue body** (the topology index) and the comment for the active head,
    if any. Use `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-head-get.sh` for the head comment.
 3. **Pick the active head** with
@@ -195,8 +205,9 @@ system has one, all pointing at the same home repo + NotebookIssue.
 ```json
 {
   "home_repo": "<org>/<repo>",
+  "project_slug": "<active-atdd-project>",
   "notebook_issue": {
-    "url": "https://github.com/<org>/<repo>/issues/<n>",
+    "url": "atdd://<org>/<repo>/issues/<n>",
     "number": <n>
   },
   "labels": {
@@ -211,8 +222,16 @@ system has one, all pointing at the same home repo + NotebookIssue.
 }
 ```
 
-`manifest-ensure.sh` creates this on first run (asking you for the home repo), and prints it
-to stdout on every subsequent run.
+`manifest-ensure.sh` creates a **skeleton** (`home_repo` + `labels`) on first run, then
+delegates to `project-set.sh` to resolve + pin the active project and wire its NotebookIssue.
+It prints the completed manifest to stdout on every subsequent run.
+
+`project_slug` is the **active atdd project** for this repo's planning (one repo can belong to
+many projects — see §2 bootstrap). It scopes every recipe's `atdd` calls. The **NotebookIssue
+is per-project** (each project's store has its own issue numbering), so `notebook_issue` always
+reflects `project_slug`; switching projects (`project-set.sh <slug>`) re-resolves it. The home
+repo is registered into the project (and target repos best-effort, in `sub-create.sh`) so the
+master registry — and thus the resolution in §2 — knows the project's membership.
 
 `members` is an **additive** repo→local-clone registry used only in orchestration mode: to run
 a Root for a SubIssue in repo `R`, there must be a local clone of `R` to use as the Root's cwd.

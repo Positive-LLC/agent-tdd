@@ -35,11 +35,15 @@ step 0. Do not proceed until `atdd ping` works.
 Check whether you were spawned by the Notes-Agent orchestrator rather than a human:
 
 ```bash
-echo "ORCH=${AGENT_TDD_ORCHESTRATED:-} NOTES=${AGENT_TDD_NOTES_ID:-} BASE=${AGENT_TDD_BASE:-} ACCT=${AGENT_TDD_GH_ACCOUNT:-} SLUG=${AGENT_TDD_SLUG:-} WS=${AGENT_TDD_WS_SESSION:-} SIG=${AGENT_TDD_SIGNAL_PATH:-}"
+echo "ORCH=${AGENT_TDD_ORCHESTRATED:-} NOTES=${AGENT_TDD_NOTES_ID:-} BASE=${AGENT_TDD_BASE:-} ACCT=${AGENT_TDD_GH_ACCOUNT:-} SLUG=${AGENT_TDD_SLUG:-} WS=${AGENT_TDD_WS_SESSION:-} SIG=${AGENT_TDD_SIGNAL_PATH:-} PROJECT=${ATDD_PROJECT:-}"
 ```
 
 (These were set on your launch line, so they live in your process environment and
 survive compaction — re-run the echo any time you need them.)
+
+**Project scoping:** `$ATDD_PROJECT` (shown above) is the atdd project your store calls are
+scoped to — it is inherited from your launch environment. Just run `atdd init-impl/record-green/
+integrate …` as normal; **do not pass `--project`** (the env carries it).
 
 - **If `AGENT_TDD_ORCHESTRATED` is empty** → you were run by a human. Ignore this
   section entirely; the original "Wave 0 deltas" below are unchanged.

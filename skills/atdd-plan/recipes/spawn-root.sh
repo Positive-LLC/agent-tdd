@@ -62,6 +62,8 @@ ORCH_REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
   || die "spawn-root.sh must run from inside the orchestrator's git repo"
 NOTES_DIR="${ORCH_REPO_ROOT}/.atdd/${NOTES_ID}"
 [[ -d "${NOTES_DIR}" ]] || die "no orchestration state dir at ${NOTES_DIR} (run orch-init.sh first)"
+# The active atdd project, resolved during planning and recorded by orch-init.sh.
+PROJECT_SLUG="$(jq -r '.project_slug // "default"' "${NOTES_DIR}/meta.json" 2>/dev/null || echo default)"
 COHORT_DIR="${NOTES_DIR}/cohort-${RI_NUM}"
 SUB_DIR="${COHORT_DIR}/${SUB_SLUG}"
 LOG_DIR="${SUB_DIR}/log"
@@ -164,6 +166,7 @@ export AGENT_TDD_WS_SESSION='${WS_SESSION}'
 export AGENT_TDD_SIGNAL_PATH='${SIGNAL_PATH}'
 export CLAUDE_SKILL_DIR='${SKILL_DIR_FROM}'
 export AGENT_TDD_CLI='${AGENT_TDD_CLI}'
+export ATDD_PROJECT='${PROJECT_SLUG}'
 exec bash '${PLUGIN_ROOT}/skills/atdd-plan/recipes/launch-root.sh' '${LOG_DIR}'
 EOF
 chmod +x "${LAUNCH_SH}"

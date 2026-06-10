@@ -165,6 +165,14 @@ else
   SUB_REF_JSON=null
 fi
 
+# --- active atdd project (env from the orchestrated launch wrapper, else the
+#     repo's pinned manifest, else "default"); recorded so this Root's spawn
+#     recipes (test/impl) can scope their agents, surviving compaction ---
+PROJECT_SLUG="${ATDD_PROJECT:-}"
+if [[ -z "$PROJECT_SLUG" ]]; then
+  PROJECT_SLUG="$(jq -r '.project_slug // "default"' "${REPO_ROOT}/.atdd/manifest.json" 2>/dev/null || echo default)"
+fi
+
 # --- meta.json ---
 META="${STATE_DIR}/meta.json"
 cat > "${META}" <<EOF
@@ -173,6 +181,7 @@ cat > "${META}" <<EOF
   "task": "${ROOT_TASK}",
   "base": "${BASE_BRANCH}",
   "gh_account": "${GH_ACCOUNT}",
+  "project_slug": "${PROJECT_SLUG}",
   "max_waves": ${MAX_WAVES},
   "wave_size_cap": 5,
   "current_wave": 0,

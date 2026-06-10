@@ -61,6 +61,12 @@ META="${STATE_DIR}/meta.json"
 GH_ACCOUNT="$(grep -E '"gh_account"' "${META}" | sed -E 's/.*"gh_account"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 [[ -n "${GH_ACCOUNT}" ]] || die "meta.json:gh_account is empty or missing; bump the Root with a re-init"
 
+# --- active atdd project to scope the test agent's `atdd` calls (env wins, else
+#     the Root's meta.json, else "default") ---
+PROJECT_SLUG="${ATDD_PROJECT:-}"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="$(grep -E '"project_slug"' "${META}" | sed -E 's/.*"project_slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="default"
+
 mkdir -p "${STATUS_DIR}"
 
 # --- create worktree ---
@@ -97,9 +103,9 @@ log "capturing pane to ${LOG_DIR}/tmux.pane"
 # Mirrors launch-impl-agent.sh, which already uses this posture for impl agents
 # (trusted local repos only). opencode/codex: bare TUI, flags unverified.
 if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
-	tmux send-keys -t "${TARGET}" "claude --permission-mode bypassPermissions" Enter
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' claude --permission-mode bypassPermissions" Enter
 else
-    tmux send-keys -t "${TARGET}" "${AGENT_TDD_CLI}" Enter
+    tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ${AGENT_TDD_CLI}" Enter
 fi
 
 # Wait for the prompt (matched by '> ' or similar).

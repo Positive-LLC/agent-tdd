@@ -170,6 +170,7 @@ gitignored (`.atdd/.gitignore`).
   "invoking_repo_root": "/abs/planning/repo",
   "home_repo": "Positive-LLC/pg-agent-erp",
   "notebook_issue": 318,
+  "project_slug": "erp",
   "gh_account": "willie-chang",
   "notes_tmux_session": "<whatever the human launched from>",
   "notes_tmux_window_id": "@4",
@@ -180,6 +181,10 @@ gitignored (`.atdd/.gitignore`).
 }
 ```
 
+- `project_slug` — the active atdd project, resolved + pinned during planning and
+  copied here by `orch-init.sh`. `spawn-root.sh` exports it as `$ATDD_PROJECT` in each
+  Root's launch wrapper, so every spawned Root (and its Test/Impl agents) scopes its
+  `atdd` calls to the right project. Orchestration never re-asks — planning already chose.
 - `base_by_repo` — the human-confirmed base table from the go-gate (§3.1). The one
   value the system refuses to default. You fill it via jq (§3.1). **Never spawn a
   Root for a repo not in this table.**

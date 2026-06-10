@@ -44,6 +44,12 @@ REPO_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" \
 META="${REPO_ROOT}/.atdd/${ROOT_ID}/meta.json"
 [[ -f "$META" ]] || die "meta.json not found at ${META}"
 
+# Active atdd project for the resumed agent (env wins, else the Root's meta.json,
+# else "default") — so a resumed window stays in the same project.
+PROJECT_SLUG="${ATDD_PROJECT:-}"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="$(grep -E '"project_slug"' "${META}" | sed -E 's/.*"project_slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="default"
+
 SESSION="$(jq -r '.root_tmux_session // empty' "$META")"
 [[ -n "$SESSION" ]] || die "root_tmux_session not set in ${META}"
 
@@ -83,6 +89,7 @@ log "new window id: ${NEW_WIN_ID}"
 # CLI choice. tmux's server-wide env is unreliable across sessions.
 log "launching ${AGENT_TDD_CLI} in ${NEW_WIN_ID}"
 tmux send-keys -t "${NEW_WIN_ID}" "export AGENT_TDD_CLI='${AGENT_TDD_CLI}'" Enter
+tmux send-keys -t "${NEW_WIN_ID}" "export ATDD_PROJECT='${PROJECT_SLUG}'" Enter
 tmux send-keys -t "${NEW_WIN_ID}" "${AGENT_TDD_CLI}" Enter
 
 # --- wait for the prompt indicator to appear ---

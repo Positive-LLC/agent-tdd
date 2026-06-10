@@ -83,9 +83,12 @@ done
 [[ -n "${NOTES_ID}" ]] || die "could not claim a notes-id within 32 attempts; clean up stale .atdd/notes-* dirs"
 log "claimed orchestration id: ${NOTES_ID}"
 
-# --- carry the manifest's home_repo + notebook for convenience ---
+# --- carry the manifest's home_repo + notebook + active project for convenience ---
 HOME_REPO="$(jq -r '.home_repo // empty' "${MANIFEST}")"
 NB_NUMBER="$(jq -r '.notebook_issue.number // empty' "${MANIFEST}")"
+# Planning has already resolved + pinned the active project; orchestration never
+# re-asks — it propagates this slug to every spawned Root via meta.json -> env.
+PROJECT_SLUG="$(jq -r '.project_slug // "default"' "${MANIFEST}")"
 
 # --- write meta.json ---
 META="${STATE_DIR}/meta.json"
@@ -95,6 +98,7 @@ jq -n \
   --arg repo_root  "${REPO_ROOT}" \
   --arg home_repo  "${HOME_REPO}" \
   --arg nb         "${NB_NUMBER}" \
+  --arg project_slug "${PROJECT_SLUG}" \
   --arg gh_account "${GH_ACCOUNT}" \
   --arg session    "${ORCH_TMUX_SESSION}" \
   --arg window     "${ORCH_TMUX_WINDOW_ID}" \
@@ -105,6 +109,7 @@ jq -n \
     invoking_repo_root:       $repo_root,
     home_repo:                $home_repo,
     notebook_issue:           (if $nb == "" then null else ($nb|tonumber) end),
+    project_slug:             $project_slug,
     gh_account:               $gh_account,
     notes_tmux_session:       $session,
     notes_tmux_window_id:     $window,

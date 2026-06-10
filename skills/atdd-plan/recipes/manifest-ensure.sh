@@ -76,73 +76,68 @@ if [[ "${1:-}" == "--register-member" ]]; then
   exit 0
 fi
 
-# --- fast path: manifest exists, just print it ---
-if [[ -f "$MANIFEST" ]]; then
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- fast path: manifest is COMPLETE (a project is already pinned) ---
+if [[ -f "$MANIFEST" ]] && [[ -n "$(jq -r '.project_slug // empty' "$MANIFEST" 2>/dev/null)" ]]; then
   jq '.' "$MANIFEST"
   exit 0
 fi
 
-command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH (needed to bootstrap the NotebookIssue)"
-log "no manifest at $MANIFEST — bootstrapping"
+command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH (needed to bootstrap)"
 
-HOME_REPO="${1:-}"
-if [[ -z "$HOME_REPO" ]]; then
-  printf 'Home repo (e.g. Positive-LLC/pg-agent-erp) — where the NotebookIssue + RootIssues live: ' >&2
-  read -r HOME_REPO
-fi
-[[ "$HOME_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
-  || die "home repo must look like owner/name (got: $HOME_REPO)"
-
-NOTEBOOK_LABEL="atdd:notebook"
-ROOT_LABEL="atdd:root"
-SUB_LABEL="atdd:sub"
-READY_LABEL="atdd:ready"
-
-# --- find or create the NotebookIssue in the local store ---
-log "looking for an existing NotebookIssue (label=${NOTEBOOK_LABEL}) in ${HOME_REPO}"
-EXISTING="$(atdd issue list --repo "$HOME_REPO" --label "$NOTEBOOK_LABEL" --state open)" \
-  || die "atdd issue list failed"
-NB_REF="$(jq -r 'if length > 0 then .[0].ref else empty end' <<<"$EXISTING")"
-
-if [[ -z "$NB_REF" ]]; then
-  log "no NotebookIssue found — creating one"
-  NB_TITLE="Agent TDD — Notes Agent notebook"
-  NB_BODY="**Notes Agent private notebook** for home repo \`${HOME_REPO}\` (local atdd store).
-
-Body is populated on the first \`notebook-index-update.sh\` run."
-  NB_REF="$(printf '%s' "$NB_BODY" | atdd issue create \
-    --repo "$HOME_REPO" --title "$NB_TITLE" --body-file - --label "$NOTEBOOK_LABEL" --porcelain)" \
-    || die "failed to create NotebookIssue"
-  log "created NotebookIssue ${NB_REF}"
+# --- ensure a skeleton manifest (home_repo + labels); the project + NotebookIssue
+#     are wired per-project by project-set.sh below (the notebook is per-project) ---
+if [[ ! -f "$MANIFEST" ]]; then
+  log "no manifest at $MANIFEST — bootstrapping skeleton"
+  HOME_REPO="${1:-}"
+  if [[ -z "$HOME_REPO" ]]; then
+    printf 'Home repo (e.g. Positive-LLC/pg-agent-erp) — where the NotebookIssue + RootIssues live: ' >&2
+    read -r HOME_REPO
+  fi
+  [[ "$HOME_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+    || die "home repo must look like owner/name (got: $HOME_REPO)"
+  mkdir -p "$MANIFEST_DIR"
+  GITIGNORE="${MANIFEST_DIR}/.gitignore"
+  [[ -f "$GITIGNORE" ]] || printf '*\n!.gitignore\n!manifest.json\n' > "$GITIGNORE"
+  TMP="${MANIFEST}.tmp.$$"
+  jq -n --arg home "$HOME_REPO" '
+    {
+      home_repo: $home,
+      labels: { notebook: "atdd:notebook", root: "atdd:root", sub: "atdd:sub", ready: "atdd:ready" }
+    }
+  ' > "$TMP"
+  mv "$TMP" "$MANIFEST"
+  log "wrote skeleton $MANIFEST"
 else
-  log "reusing existing NotebookIssue ${NB_REF}"
-fi
-NB_NUMBER="${NB_REF##*#}"
-NB_URL="atdd://${HOME_REPO}/issues/${NB_NUMBER}"
-
-# --- write manifest atomically ---
-mkdir -p "$MANIFEST_DIR"
-GITIGNORE="${MANIFEST_DIR}/.gitignore"
-if [[ ! -f "$GITIGNORE" ]]; then
-  printf '*\n!.gitignore\n!manifest.json\n' > "$GITIGNORE"
+  log "skeleton manifest exists but no project pinned yet — resolving"
 fi
 
-TMP="${MANIFEST}.tmp.$$"
-jq -n \
-  --arg home    "$HOME_REPO" \
-  --arg nb_url  "$NB_URL" \
-  --argjson nb_num "$NB_NUMBER" \
-  --arg lbl_nb  "$NOTEBOOK_LABEL" \
-  --arg lbl_rt  "$ROOT_LABEL" \
-  --arg lbl_sb  "$SUB_LABEL" \
-  --arg lbl_rd  "$READY_LABEL" '
-  {
-    home_repo: $home,
-    notebook_issue: { url: $nb_url, number: $nb_num },
-    labels: { notebook: $lbl_nb, root: $lbl_rt, sub: $lbl_sb, ready: $lbl_rd }
-  }
-' > "$TMP"
-mv "$TMP" "$MANIFEST"
-log "wrote $MANIFEST"
+# --- resolve the active project, asking the human ONLY when ambiguous ---
+SLUG="${2:-}"   # an explicit slug (non-interactive / scripted) wins.
+if [[ -z "$SLUG" ]]; then
+  set +e
+  CANDIDATES="$("${HERE}/project-resolve.sh")"; RC=$?
+  set -e
+  case "$RC" in
+    0)  SLUG="$CANDIDATES" ;;                                  # env-set or single project
+    10)                                                        # zero projects: first-time
+        if [[ -t 0 ]]; then
+          printf 'Project slug [default]: ' >&2
+          read -r SLUG; SLUG="${SLUG:-default}"
+        else
+          SLUG="default"
+        fi
+        ;;
+    11)                                                        # ambiguous: cannot auto-pick
+        log "home repo belongs to multiple projects: ${CANDIDATES//$'\n'/, }"
+        die "ambiguous project — re-run with a slug (manifest-ensure.sh <home> <slug>) or run project-set.sh <slug>"
+        ;;
+    *)  die "project-resolve.sh failed (rc=$RC)" ;;
+  esac
+fi
 
-jq '.' "$MANIFEST"
+# project-set.sh creates the project, registers the home repo, finds/creates the
+# per-project NotebookIssue, pins project_slug + notebook_issue, and prints the
+# completed manifest.
+exec "${HERE}/project-set.sh" "$SLUG"

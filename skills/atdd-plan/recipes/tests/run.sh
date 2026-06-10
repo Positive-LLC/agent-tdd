@@ -122,4 +122,33 @@ run manifest-ensure.sh --resolve-member acme/otc; assert_rc "stale clone -> exit
 gh_clean
 teardown_repo
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== project resolution (ask only when ambiguous) + isolation =="
+setup_repo   # bootstraps acme/home into the "default" project (0-projects path)
+jchk "bootstrap pinned project_slug=default" '.project_slug=="default"' "$(cat "${WORK}/.atdd/manifest.json")"
+jchk "bootstrap created the per-project NotebookIssue" '.notebook_issue.number>0' "$(cat "${WORK}/.atdd/manifest.json")"
+jchk "repo where home -> default" '.projects|index("default")' "$(atdd repo where acme/home)"
+run project-resolve.sh; assert_ok "resolve: pinned -> exit 0"; assert_out "resolve prints default" "default"
+
+# Put the home repo into a SECOND project, then UNPIN -> resolution is ambiguous.
+atdd project create erp >/dev/null
+atdd --project erp repo register acme/home "$WORK" --home >/dev/null
+jchk "repo where home -> default AND erp" '(.projects|index("default")) and (.projects|index("erp"))' "$(atdd repo where acme/home)"
+run project-resolve.sh; assert_ok "resolve: still pinned default (pin wins over ambiguity)"; assert_out "still default" "default"
+( cd "$WORK" && jq 'del(.project_slug)' .atdd/manifest.json > .atdd/m.tmp && mv .atdd/m.tmp .atdd/manifest.json )
+run project-resolve.sh; assert_rc "resolve: unpinned + 2 projects -> ambiguous (exit 11)" 11
+grep -q '^default$' <<<"$OUT" && grep -q '^erp$' <<<"$OUT" && pass "ambiguous lists both candidates" || fail "ambiguous candidates" "OUT=$OUT"
+
+# project-set switches the active project (+ re-resolves the per-project notebook).
+run project-set.sh erp; assert_ok "project-set erp"
+jchk "manifest now pinned to erp" '.project_slug=="erp"' "$(cat "${WORK}/.atdd/manifest.json")"
+run project-resolve.sh; assert_ok "resolve: pinned erp -> exit 0"; assert_out "resolves erp" "erp"
+
+# Isolation: a RootIssue created now is scoped to erp (manifest pin) and invisible in default.
+STDIN_DATA='ERP root body' run root-create.sh 'ERP Root' -; assert_ok "root-create scoped to erp"; ERP_ROOT="$OUT"
+jchk "ERP Root visible under erp" 'map(.title)|index("ERP Root")' "$(atdd --project erp issue list --repo acme/home --label atdd:root)"
+jchk "ERP Root INVISIBLE under default" '(map(.title)|index("ERP Root"))|not' "$(atdd --project default issue list --repo acme/home --label atdd:root)"
+gh_clean
+teardown_repo
+
 summary

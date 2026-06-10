@@ -61,6 +61,12 @@ META="${STATE_DIR}/meta.json"
 GH_ACCOUNT="$(grep -E '"gh_account"' "${META}" | sed -E 's/.*"gh_account"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 [[ -n "${GH_ACCOUNT}" ]] || die "meta.json:gh_account is empty or missing; bump the Root with a re-init"
 
+# --- active atdd project to scope the impl agent's `atdd` calls (env wins, else
+#     the Root's meta.json, else "default") ---
+PROJECT_SLUG="${ATDD_PROJECT:-}"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="$(grep -E '"project_slug"' "${META}" | sed -E 's/.*"project_slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[[ -n "${PROJECT_SLUG}" ]] || PROJECT_SLUG="default"
+
 mkdir -p "${STATUS_DIR}"
 
 # --- create impl worktree (stacked off test branch) ---
@@ -104,7 +110,7 @@ LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
 # pane's shell didn't inherit our env (tmux env propagation is unreliable
 # across servers and pre-existing sessions). The wrapper starts the CLI
 # interactively; the prompt is pasted below, not passed as an argument.
-LAUNCH_CMD="AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${LOG_DIR}' '${STATUS_DIR}'"
+LAUNCH_CMD="ATDD_PROJECT='${PROJECT_SLUG}' AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${LOG_DIR}' '${STATUS_DIR}'"
 tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
 tmux send-keys -t "${TARGET}" Enter
 

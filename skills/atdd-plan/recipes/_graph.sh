@@ -17,5 +17,6 @@ set -euo pipefail
 
 die() { printf '[_graph] ERROR: %s\n' "$*" >&2; exit 1; }
 command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
+source "$(dirname "${BASH_SOURCE[0]}")/_project-env.sh"
 
 atdd topology graph

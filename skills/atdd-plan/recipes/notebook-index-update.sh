@@ -12,6 +12,7 @@ die() { printf '[notebook-index-update] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v atdd >/dev/null 2>&1 || die "atdd CLI not found on PATH"
 command -v jq   >/dev/null 2>&1 || die "jq not found on PATH"
+source "$(dirname "${BASH_SOURCE[0]}")/_project-env.sh"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
 MANIFEST="${REPO_ROOT}/.atdd/manifest.json"
