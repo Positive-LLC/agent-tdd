@@ -99,6 +99,17 @@ The Notes Agent investigates and proposes the **Input → Output**; you sign off
 
 Either way you only ever talk to one agent at a time, and it keeps you out of the loop until a decision is genuinely yours.
 
+### Watch progress (web console)
+
+You don't have to read logs to follow a run. The `atdd` CLI ships a **read-only web dashboard** of the local store: as agents work, you watch their work-items move through *todo* → *available* → *done* → *merged*.
+
+```
+atdd dashboard          # prints the URL (autostarts the daemon)
+atdd dashboard --open    # also opens it in your default browser
+```
+
+It serves at **`http://127.0.0.1:4517`** by default — localhost only; override with `--port`. The page auto-refreshes every 10s and lists each **project** with its repos and live issue counts (total, done, merged, blocked, in-progress, todo, available). It only *shows* state — you can't change anything from it — so it's safe to leave open while a wave or a full orchestrated plan runs.
+
 ## Safety notes
 
 - Impl agents run an interactive `claude --permission-mode bypassPermissions` session (the OpenCode/Codex interactive permission posture is pending smoke verification — see ROADMAP). Use only in trusted local repos.
