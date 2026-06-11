@@ -8,6 +8,35 @@
 > **v2 changelog (0.10.0):** Adds a Notes Agent planning layer upstream of
 > the Root Agent. The Root Agent design described in §1–§9 is **unchanged**.
 > See §1.5 (Layer architecture) and §10 (Notes Agent layer) for the addition.
+>
+> **⚠️ Current execution model (v1.1.x) — read before §2–§10.** The body below is the
+> v2/v0.10.0 design rationale and still narrates the **GitHub-era** mechanics (issues,
+> PRs, CI, a GitHubProject board). The *implemented* inner flow no longer uses GitHub:
+> it runs on a **local work-item store (the `atdd` CLI) + plain git**, with GitHub
+> touched only at the **optional final hand-off PR** to a base branch. The rationale
+> (waves, gates, roles, coordination, token model) is unchanged — read the GitHub
+> vocabulary through this map:
+>
+> | §2–§10 says (GitHub era) | Implemented now (local `atdd` store) |
+> |---|---|
+> | GitHub issue / GitHubProject board | work-item in the local `atdd` store (no board) |
+> | impl agent "opens a PR" | impl agent pushes a branch + records green (`atdd record-green`) |
+> | "CI passing" / `gh pr checks --watch` | the daemon re-runs the recorded test commands locally (green = all exit 0) |
+> | "merge the PR into the Root branch" | Root runs `atdd integrate` = `git merge --no-ff` + a union re-verify of all merged issues' commands |
+> | "done = integration PR merges + issue closed" | done = `atdd integrate` succeeds (work-item `merged`) |
+> | the single final PR to base | **unchanged** — the one optional `gh pr` hand-off (PROTOCOL §8 / ORCHESTRATE §6) |
+>
+> **Multi-project (v1.1.1).** The store is multi-project: one isolated DB per project
+> plus a global `master.db` registry (project + repo registries with stable UUIDs +
+> repo↔project membership). A repo may belong to many projects; no work-item is ever
+> shared across them. The Notes Agent resolves + pins an active project at planning
+> bootstrap (sole project → auto; asks the human only when a repo belongs to >1) and
+> carries it to every spawned agent via `$ATDD_PROJECT`. Detail: ROADMAP.md (v1.1.1),
+> CORE.md §2.
+>
+> A full rewrite of §2–§10 into this local model is owed at the next major-version
+> bump (per the repo rule the whitepaper body is edited only at major bumps — see
+> CLAUDE.md / ROADMAP.md). This callout keeps the doc accurate until then.
 
 ---
 
@@ -33,6 +62,8 @@ Agent TDD is two layers, each with a single human-facing surface:
 2. **Root Agent** — `/agent-tdd:atdd` (free-form spec), `/agent-tdd:atdd-from-issue <owner/repo> <#>` (consume a planned SubIssue), plus the compact wrapper. The **execution** layer — the wave-based orchestrator described in §1–§9. **Behaviorally unchanged**: a Root cannot tell whether its "human" is a person or the Notes Agent. Orchestration is carried entirely by environment the spawn sets + the `atdd-from-issue` wrapper; `/atdd` and PROTOCOL.md never branch on it. Operations contract: `skills/atdd/PROTOCOL.md`.
 
 The two layers communicate via GitHub for all planning artifacts and the completion contract — **GitHub remains the single source of truth for "work done"** (a SubIssue is done only when its integration PR merges and it is closed). As of v1.0.0 the Notes Agent can additionally *orchestrate* the Root layer; that orchestration **coordination** layer uses local status files + tmux window state for Root liveness and escalation — a deliberate, scoped exception to "GitHub only", justified in §10.7. The planning artifacts and the completion contract are unchanged, and from the Root Agent's perspective nothing changes: a SubIssue body still looks identical to free-form `$ARGUMENTS`, and the Root cannot tell whether its "human" is a person or the Notes Agent.
+
+> *(v1.1.x: per the **Current execution model** callout at the top, those "planning artifacts" and the "source of truth" now live in the **local `atdd` store**, not GitHub.com — both layers read/write the local store; GitHub appears only at the optional final hand-off PR. Read "GitHub" in this section as the local store.)*
 
 Pick the entry point that matches the situation:
 

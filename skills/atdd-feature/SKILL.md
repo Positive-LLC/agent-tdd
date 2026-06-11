@@ -58,13 +58,23 @@ proceed until `atdd ping` works.
 
 Then follow CORE.md §2 immediately:
 
-1. Check whether `.atdd/manifest.json` already exists at the repo root:
-   - **If yes**, run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh`
-     with no args (it just prints the JSON).
-   - **If no**, ask the human (one short message) for the home repo
+1. **Ensure the manifest + the active atdd project** (CORE.md §2 has the full rule):
+   - **If `.atdd/manifest.json` exists**, run
+     `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/manifest-ensure.sh` with no args
+     (it prints the JSON; the pinned `project_slug` is reused).
+   - **If not**, ask the human (one short message) for the home repo
      (`owner/name` that will host NotebookIssue + RootIssues). Then call
-     `manifest-ensure.sh <home-repo>` with that value. Do **not** rely on the
-     recipe's interactive `read` prompts — Bash-tool stdin is not interactive.
+     `manifest-ensure.sh <home-repo>` — it creates the manifest and resolves the
+     atdd **project** from the master registry (first run → `default`; home repo
+     already in exactly one project → that one). Pass a slug as a 2nd arg
+     (`manifest-ensure.sh <home-repo> <slug>`) to choose a non-default project. Do
+     **not** rely on the recipe's interactive `read` prompts — Bash-tool stdin is
+     not interactive.
+   - **If `manifest-ensure.sh` reports `ambiguous project`** (the home repo belongs
+     to more than one project), present the listed slugs to the human, ask which one,
+     then run `bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/project-set.sh <chosen>`.
+     This is the **only** time you ask about the project; every recipe then scopes its
+     `atdd` calls to it automatically (via `$ATDD_PROJECT`).
 2. Read the NotebookIssue body to restore prior context.
 3. Run `topology-next-urgent.sh`. If it returns an issue, ask the human
    whether to resume that head or start a fresh one from `$ARGUMENTS`. If

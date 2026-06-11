@@ -11,6 +11,10 @@ THIS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RECIPES_DIR="$(cd -- "${THIS_DIR}/.." && pwd)"
 # atdd binary: env override, else the sibling atdd-cli repo's debug build.
 ATDD_BIN="${ATDD_BIN:-$(cd -- "${THIS_DIR}/../../../../.." && pwd)/atdd-cli/target/debug/atdd}"
+# The recipes' per-command version guard (_ensure-version.sh) would try to
+# network-heal a locally built binary whose version differs from skills/VERSION.
+# Tests use the binary as-is and must never hit the network — opt out.
+export ATDD_SKIP_VERSION_CHECK=1
 
 pass() { TESTS_RUN=$((TESTS_RUN+1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
 fail() {

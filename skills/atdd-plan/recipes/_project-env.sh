@@ -11,6 +11,12 @@
 # Usage (near the top of a recipe, after the `command -v atdd` check):
 #   source "$(dirname "${BASH_SOURCE[0]}")/_project-env.sh"
 
+# Keep the atdd CLI in lockstep with this plugin's pinned version: auto-heals on
+# mismatch, run-once + no network on the happy path. -e-safe; never breaks a recipe.
+__atdd_guard="$(dirname -- "${BASH_SOURCE[0]}")/_ensure-version.sh"
+if [[ -f "${__atdd_guard}" ]]; then source "${__atdd_guard}"; fi
+unset __atdd_guard
+
 if [[ -z "${ATDD_PROJECT:-}" ]]; then
   __atdd_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   __atdd_mf="${__atdd_root:+${__atdd_root}/.atdd/manifest.json}"

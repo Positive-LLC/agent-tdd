@@ -1,9 +1,19 @@
 name: Release
 
-# Manual only. Creates the GitHub Release (+ tag) for the version in package.json.
-# The release is the container; the CLI repo's build workflow attaches the
-# atdd-<os>-<arch> binaries + SHA256SUMS to it afterwards.
+# Cut a release by pushing a bare X.X.X tag (e.g. `git tag 1.1.2 && git push origin 1.1.2`).
+# The workflow validates the tag is three dot-separated numbers and REJECTS anything
+# else (fails, no release). It then creates the GitHub Release on the v-prefixed tag
+# (v1.1.2) — the CLI + skills/ensure-atdd.sh download binaries from
+# releases/download/v<version>/, so the release tag must carry the `v`. (You end up
+# with two tags: the pushed `1.1.2` and the release's `v1.1.2`.)
+#
+# The release is just the container; the CLI repo's build-binaries workflow attaches
+# the atdd-<os>-<arch> binaries + SHA256SUMS to it afterwards.
+#
+# workflow_dispatch stays as a manual fallback (version read from package.json).
 on:
+  push:
+    tags: ['*']
   workflow_dispatch: {}
 
 permissions:
@@ -15,14 +25,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read version from package.json
+      - name: Resolve & validate version
         id: ver
-        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            # Tag push: the bare tag IS the version. Reject anything not X.X.X.
+            version="${GITHUB_REF_NAME}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::tag '$version' is not X.X.X (e.g. 1.1.2) — refusing to release"
+              exit 1
+            fi
+            # Guard: tag must match the committed package.json version, so a release
+            # is never published while the version files still say something else.
+            pkg="$(jq -r .version package.json)"
+            if [[ "$version" != "$pkg" ]]; then
+              echo "::error::tag '$version' != package.json version '$pkg' — bump package.json (and plugin.json + skills/VERSION) first"
+              exit 1
+            fi
+          else
+            # Manual fallback: version comes from package.json.
+            version="$(jq -r .version package.json)"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::package.json version '$version' is not X.X.X"
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Create Release v${{ steps.ver.outputs.version }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           v="v${{ steps.ver.outputs.version }}"
           if gh release view "$v" >/dev/null 2>&1; then
             echo "Release $v already exists — nothing to do."

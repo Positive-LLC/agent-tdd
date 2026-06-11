@@ -1,15 +1,17 @@
 # agent-tdd
 
-A plugin for human-agent co-authored TDD. You spec the test cases; agents write the red tests, implement them, open PRs, and merge waves of work in parallel. You direct; they run the show.
+A plugin for human-agent co-authored TDD. You spec the test cases; agents write the red tests, implement them, reach green locally, and integrate waves of work in parallel — all on a local work-item store (the `atdd` CLI) + plain git, with no PRs and no CI in the loop. You direct; they run the show.
 
 It works in **two layers**, each a single agent you talk to:
 
-- **Plan** — `/agent-tdd:fix` (the *Notes Agent*) investigates a bug or feature across one or more repos and turns it into well-specced GitHub issues (a RootIssue + per-repo SubIssues). It surfaces only the **Input → Output** for you to sign off; the trace stays in a private notebook issue.
-- **Execute** — `/agent-tdd:atdd` (the *Root Agent*) takes one spec — typed inline, or a planned SubIssue — and runs the wave-based TDD workflow: red tests → implementation → PRs → merged waves, gated and parallel.
+- **Plan** — `/agent-tdd:fix` (the *Notes Agent*) investigates a bug or feature across one or more repos and turns it into well-specced work-items (a RootIssue + per-repo SubIssues) in the local `atdd` store. It surfaces only the **Input → Output** for you to sign off; the trace stays in a private notebook.
+- **Execute** — `/agent-tdd:atdd` (the *Root Agent*) takes one spec — typed inline, or a planned SubIssue — and runs the wave-based TDD workflow: red tests → implementation → local green → integrated waves (plain `git merge`, no PR), gated and parallel.
 
 As of **v1.0.0**, after planning you can hand the whole thing off with one word: say **"go"** and the Notes Agent **orchestrates** execution — spawning one Root per ready SubIssue and driving the entire plan to done, one head at a time, asking you only when a real decision is needed (and always before merging to a base branch). You stay the director.
 
 One skills source (`./skills/`) runs on three coding-agent hosts — **Claude Code**, **OpenCode**, and **Codex** — with a small per-host manifest. There is no build step (the pattern is borrowed from [obra/superpowers](https://github.com/obra/superpowers)).
+
+**Projects (v1.1.1).** Work-items live in isolated **projects** in the local `atdd` store — a repo can belong to several, and no issue is ever shared across them. You pick the project once, at planning time: the Notes Agent uses it automatically when there's only one, and asks you which only when a repo belongs to more than one. From then on everything is scoped to it. `atdd project create|list` manages projects and `atdd repo where <owner/repo>` traces a repo across them.
 
 ---
 
@@ -38,9 +40,9 @@ Prefix per host: Claude Code `/agent-tdd:<command>`, OpenCode `/<command>`, Code
 
 - One of: **Claude Code**, **OpenCode**, or **Codex**, installed and authenticated.
 - **tmux** ≥ 3.0.
-- **`gh`** (GitHub CLI), authenticated for the target repo.
 - **git** ≥ 2.5 (worktree support).
-- A repo whose CI is reachable via `gh pr checks --watch`.
+- The **`atdd`** CLI — the local work-item store the inner flow runs on (replaces GitHub for issues/labels/deps and the green-and-merge step). The plugin auto-installs it on first use (`skills/ensure-atdd.sh`); no manual setup.
+- **`gh`** (GitHub CLI) — **optional**, used only for the final hand-off PR to a base branch. The inner flow (plan → red tests → green → integrate) is fully local: no PR, no CI.
 
 ## Install
 
@@ -90,7 +92,7 @@ The Root Agent discusses the test cases with you (Wave 0). When you're aligned, 
 /agent-tdd:fix <describe the bug>
 ```
 
-The Notes Agent investigates and proposes the **Input → Output**; you sign off, and it writes the GitHub issues. When at least one SubIssue is ready it asks you to choose:
+The Notes Agent investigates and proposes the **Input → Output**; you sign off, and it writes the work-items to the local `atdd` store. When at least one SubIssue is ready it asks you to choose:
 
 - **`go`** → it **orchestrates**: spawns a Root per ready SubIssue and drives the whole plan to done, one head at a time — confirming a base branch per repo and asking before each merge to base. *(Needs tmux — that's why you launched inside it. If you're not in tmux, this option isn't offered.)*
 - **`plan-only`** → it stops at the issues; you run `/agent-tdd:atdd-from-issue <owner/repo> <#>` yourself, per ready SubIssue, whenever you want.
@@ -100,7 +102,7 @@ Either way you only ever talk to one agent at a time, and it keeps you out of th
 ## Safety notes
 
 - Impl agents run an interactive `claude --permission-mode bypassPermissions` session (the OpenCode/Codex interactive permission posture is pending smoke verification — see ROADMAP). Use only in trusted local repos.
-- The workflow uses GitHub API heavily. Watch your 5000/hr authenticated rate limit on long workflows.
+- The inner flow runs on the local `atdd` store + plain git — no GitHub API and no CI in the loop, so no rate-limit concerns. `gh` is touched only for the optional final hand-off PR to a base branch.
 - Each parallel agent uses its own `git worktree`. For very large repos, N parallel agents ≈ N× working-tree disk.
 - If the orchestrator process dies mid-workflow, you'll need to re-launch it manually — there is no automatic crash recovery in v1.
 
