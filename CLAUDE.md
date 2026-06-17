@@ -91,9 +91,32 @@ After planning, on a single human "go" (the go-gate), the Notes Agent enters orc
 - **Path discipline**: every recipe and prompt uses absolute paths. Worktrees see their own working tree, not the main repo's, and `.atdd/<root-id>/` only exists in the main repo's working tree.
 - **`${CLAUDE_SKILL_DIR}`** is the canonical reference to this skill's directory. Use it in PROTOCOL.md, role markdowns, and any new skill content — never hard-code paths.
 
-## Plugin metadata
+## Plugin metadata & versioning
 
-- `version` lives in `.claude-plugin/plugin.json`. Bump it when shipping behavior changes; the recent commit log uses `feat(atdd): ... (vX.Y.Z)` style.
+- **The version lives in FIVE places, kept in lockstep:** `package.json` (OpenCode),
+  `.claude-plugin/plugin.json` (Claude), `.codex-plugin/plugin.json` (Codex),
+  `skills/VERSION` (read by `ensure-atdd.sh` to pick the matching `atdd` binary), and
+  the sibling `../atdd-cli/atdd/Cargo.toml` (the tool binary). Bump it when shipping
+  behavior changes; the recent commit log uses `feat(atdd): ... (vX.Y.Z)` style.
+- **`make set-version VERSION=X.Y.Z` is the single source of truth for bumping** — it
+  edits all five at once (`make show-version` prints them); never hand-edit one file.
+  It accepts strict `X.Y.Z` *or* an `X.Y.Z-<suffix>` prerelease (e.g. `1.2.0-snapshot`).
+  (Override the sibling path with `ATDD_CLI=/path/to/atdd-cli` if your layout differs.)
+- **Two release channels (`.github/workflows/release.yml`, triggered by tag push):**
+  - **Production `X.Y.Z` (no `-`) is IMMUTABLE.** If the `v<version>` GitHub Release
+    already exists, the workflow refuses to overwrite it — cut a new version instead.
+  - **`X.Y.Z-snapshot` is the MUTABLE prerelease channel** (a GitHub *prerelease*,
+    never marked "latest"). Re-cut it by **force-pushing the same tag**: the workflow
+    re-points the existing Release by force-moving the underlying `v<version>` git tag
+    to the new commit (the Release follows the tag, so the binaries already attached by
+    atdd-cli's `build-binaries.yml` are preserved — it does NOT delete + recreate).
+- **Re-cut loop for a snapshot:** `make set-version VERSION=X.Y.Z-snapshot` → commit →
+  `git tag -f X.Y.Z-snapshot && git push -f origin X.Y.Z-snapshot` (release.yml re-fires
+  and re-points the prerelease) → re-run atdd-cli's `build-binaries.yml` **only if the
+  tool binary changed** (it uploads with `--clobber`). Because the snapshot version
+  string is stable while the binary moves, `ensure-atdd.sh` always re-fetches for a
+  prerelease version (it bypasses its skip-if-version-matches shortcut when `VERSION`
+  contains a `-`); production behavior (skip on match) is unchanged.
 
 ## Common gotchas
 

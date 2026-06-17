@@ -1,6 +1,6 @@
 {
   "name": "agent-tdd",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "TDD in the agent era — a wave-based human-agent test co-authoring workflow that orchestrates parallel test/impl agents under one Root.",
   "author": {
     "name": "Willie Chang",

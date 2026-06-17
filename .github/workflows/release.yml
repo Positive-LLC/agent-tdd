@@ -1,11 +1,21 @@
 name: Release
 
-# Cut a release by pushing a bare X.X.X tag (e.g. `git tag 1.1.2 && git push origin 1.1.2`).
-# The workflow validates the tag is three dot-separated numbers and REJECTS anything
-# else (fails, no release). It then creates the GitHub Release on the v-prefixed tag
-# (v1.1.2) — the CLI + skills/ensure-atdd.sh download binaries from
-# releases/download/v<version>/, so the release tag must carry the `v`. (You end up
-# with two tags: the pushed `1.1.2` and the release's `v1.1.2`.)
+# Cut a release by pushing a tag (e.g. `git tag 1.1.2 && git push origin 1.1.2`).
+# The workflow validates the tag is X.Y.Z with an OPTIONAL prerelease suffix
+# (e.g. `1.2.0-snapshot`) and REJECTS anything else (fails, no release). It then
+# creates (or re-points) the GitHub Release on the v-prefixed tag (v1.1.2) — the
+# CLI + skills/ensure-atdd.sh download binaries from releases/download/v<version>/,
+# so the release tag must carry the `v`. (You end up with two tags: the pushed
+# `1.1.2` and the release's `v1.1.2`.)
+#
+# Two release channels:
+#   * Production `X.Y.Z` (no `-`) is IMMUTABLE — if the Release already exists the
+#     workflow refuses to overwrite it.
+#   * Snapshot `X.Y.Z-snapshot` (any `-suffix`) is the MUTABLE prerelease channel —
+#     re-cut it by force-pushing the same tag. The existing prerelease is re-pointed
+#     to the new commit by force-moving the underlying `v<version>` git tag (the
+#     Release follows the tag); the Release itself is NOT deleted, so the binaries
+#     already attached by the CLI repo's build-binaries workflow are preserved.
 #
 # The release is just the container; the CLI repo's build-binaries workflow attaches
 # the atdd-<os>-<arch> binaries + SHA256SUMS to it afterwards.
@@ -29,41 +39,72 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
+          # X.Y.Z with an optional prerelease suffix (e.g. 1.2.0-snapshot).
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            # Tag push: the bare tag IS the version. Reject anything not X.X.X.
+            # Tag push: the bare tag IS the version. Reject anything not X.Y.Z[-suffix].
             version="${GITHUB_REF_NAME}"
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::tag '$version' is not X.X.X (e.g. 1.1.2) — refusing to release"
+            if [[ ! "$version" =~ $semver ]]; then
+              echo "::error::tag '$version' is not X.Y.Z or X.Y.Z-suffix (e.g. 1.1.2, 1.2.0-snapshot) — refusing to release"
               exit 1
             fi
             # Guard: tag must match the committed package.json version, so a release
             # is never published while the version files still say something else.
             pkg="$(jq -r .version package.json)"
             if [[ "$version" != "$pkg" ]]; then
-              echo "::error::tag '$version' != package.json version '$pkg' — bump package.json (and plugin.json + skills/VERSION) first"
+              echo "::error::tag '$version' != package.json version '$pkg' — bump package.json (run \`make set-version VERSION=$version\`) first"
               exit 1
             fi
           else
             # Manual fallback: version comes from package.json.
             version="$(jq -r .version package.json)"
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::package.json version '$version' is not X.X.X"
+            if [[ ! "$version" =~ $semver ]]; then
+              echo "::error::package.json version '$version' is not X.Y.Z or X.Y.Z-suffix"
               exit 1
             fi
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Prerelease (snapshot) when the version carries a suffix.
+          if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
+          echo "version=$version"       >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release v${{ steps.ver.outputs.version }}
+      - name: Release v${{ steps.ver.outputs.version }}
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          PRERELEASE: ${{ steps.ver.outputs.prerelease }}
         run: |
           set -euo pipefail
-          v="v${{ steps.ver.outputs.version }}"
-          if gh release view "$v" >/dev/null 2>&1; then
-            echo "Release $v already exists — nothing to do."
-          else
+          v="v${VERSION}"
+          notes="Phase 1 — the inner flow runs on the local \`atdd\` store + plain git (no \`gh\`). Platform binaries (\`atdd-<os>-<arch>\`) + \`SHA256SUMS\` are attached by the CLI repo's build-binaries workflow."
+
+          if ! gh release view "$v" >/dev/null 2>&1; then
+            # Case 1 — Release does not exist: create it (prerelease flag when snapshot).
+            echo "Release $v does not exist — creating it (prerelease=$PRERELEASE)."
+            pre_flag=()
+            [[ "$PRERELEASE" == "true" ]] && pre_flag=(--prerelease)
             gh release create "$v" \
               --target "$GITHUB_SHA" \
+              "${pre_flag[@]}" \
               --title "agent-tdd $v" \
-              --notes "Phase 1 — the inner flow runs on the local \`atdd\` store + plain git (no \`gh\`). Platform binaries (\`atdd-<os>-<arch>\`) + \`SHA256SUMS\` are attached by the CLI repo's build-binaries workflow."
+              --notes "$notes"
+            exit 0
           fi
+
+          # Release exists. Branch on production vs snapshot.
+          if [[ "$PRERELEASE" != "true" ]]; then
+            # Case 3 — production (no `-`): immutable. Refuse to overwrite.
+            echo "::error::production Release $v already exists — production releases are immutable, refusing to overwrite. Cut a new version, or use an X.Y.Z-snapshot tag for a mutable prerelease."
+            exit 1
+          fi
+
+          # Case 2 — snapshot prerelease exists: re-point WITHOUT deleting it, so the
+          # binaries already attached by build-binaries.yml are preserved. Force-move
+          # the underlying v<version> git tag to this commit and push it; the existing
+          # Release follows the tag. Keep the --prerelease flag set.
+          echo "Snapshot Release $v already exists — re-pointing tag $v to $GITHUB_SHA (assets preserved)."
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$v" "$GITHUB_SHA"
+          git push -f origin "$v"
+          gh release edit "$v" --prerelease

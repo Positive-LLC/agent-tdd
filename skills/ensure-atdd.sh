@@ -21,7 +21,13 @@ VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION" 2>/dev/null || true)"
 [[ -n "$VERSION" ]] || die "cannot read plugin version from ${SCRIPT_DIR}/VERSION"
 
 # 1) Already the right version? -> done.
-if command -v atdd >/dev/null 2>&1; then
+#    EXCEPTION — snapshot/prerelease versions (VERSION contains a `-`): the version
+#    string is STABLE while the binary keeps changing (the X.Y.Z-snapshot release is
+#    re-cut in place). Skipping on a version match would pin the first snapshot binary
+#    forever, so for a snapshot we bypass the skip and always re-fetch.
+if [[ "$VERSION" == *-* ]]; then
+  log "snapshot version ${VERSION} — re-fetching the rolling binary (skip bypassed)"
+elif command -v atdd >/dev/null 2>&1; then
   cur="$(atdd --version 2>/dev/null | awk '{print $NF}')"
   if [[ "$cur" == "$VERSION" ]]; then
     log "atdd ${VERSION} already installed ($(command -v atdd))"
