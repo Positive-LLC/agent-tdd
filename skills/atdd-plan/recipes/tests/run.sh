@@ -151,4 +151,40 @@ jchk "ERP Root INVISIBLE under default" '(map(.title)|index("ERP Root"))|not' "$
 gh_clean
 teardown_repo
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== lsp-surface (detection + registry cross-check, advisory) =="
+SKILLS_DIR="$(cd -- "${RECIPES_DIR}/../.." && pwd)"
+LSP_SURFACE="${SKILLS_DIR}/lsp-surface.sh"
+setup_repo   # registers acme/home into the default project; WORK is the repo
+
+# run lsp-surface inside the repo; capture stdout JSON into OUT, exit into RC
+surface() { OUT="$( cd "$WORK" && bash "$LSP_SURFACE" "$@" 2>"${WORK}/err" )" && RC=0 || RC=$?; }
+
+# (a) empty repo: no symbol-precise language -> nothing detected, nothing missing
+surface --repo acme/home; assert_ok "surface ok on empty repo"
+jchk "empty repo -> detected []" '.detected==[]' "$OUT"
+jchk "empty repo -> missing  []" '.missing==[]' "$OUT"
+
+# (b) add Cargo.toml -> rust detected; no lsp registered yet -> rust is missing
+: > "${WORK}/Cargo.toml"
+surface --repo acme/home; assert_ok "surface ok with Cargo.toml"
+jchk "rust detected"            '.detected|index("rust")' "$OUT"
+jchk "rust missing (no lsp)"    '.missing|index("rust")'  "$OUT"
+
+# (c) register a WORKING rust lsp (status ok) -> rust no longer missing
+atdd lsp register --repo acme/home --lang rust --bin /usr/bin/true >/dev/null
+surface --repo acme/home; assert_ok "surface ok after registering rust"
+jchk "rust covered"             '.covered|index("rust")'        "$OUT"
+jchk "rust NOT missing"         '(.missing|index("rust"))|not'  "$OUT"
+
+# (d) a BROKEN rust lsp (missing binary, upsert) -> rust missing again
+atdd lsp register --repo acme/home --lang rust --bin /nonexistent/ra >/dev/null
+surface --repo acme/home; assert_ok "surface ok with broken rust lsp"
+jchk "broken binary -> rust missing again" '.missing|index("rust")' "$OUT"
+
+# (e) a coverage gap is ADVISORY: the recipe still exits 0
+assert_rc "missing lsp is advisory (exit 0)" 0
+gh_clean
+teardown_repo
+
 summary
