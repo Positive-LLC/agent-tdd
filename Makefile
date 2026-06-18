@@ -20,11 +20,19 @@ PLUGIN       := .claude-plugin/plugin.json
 CODEX        := .codex-plugin/plugin.json
 VERSION_FILE := skills/VERSION
 
-.PHONY: help set-version show-version
+# Local dev-binary swap targets (see the bottom of this file).
+ATDD_INSTALL_DIR ?= $(HOME)/.local/bin
+DEV_ATDD         := $(abspath $(ATDD_CLI))/target/release/atdd
+
+.PHONY: help set-version show-version use-dev-atdd use-release-atdd build-dev-atdd atdd-status
 
 help:
 	@echo "make set-version VERSION=X.Y.Z   set the version in all 5 files (lockstep)"
 	@echo "make show-version                show the version each file holds"
+	@echo "make use-dev-atdd                symlink installed atdd -> local v2 dev build (no release)"
+	@echo "make use-release-atdd            restore the real release binary (or re-download)"
+	@echo "make build-dev-atdd              cargo build --release in the sibling atdd-cli"
+	@echo "make atdd-status                 show which atdd is active + versions"
 
 set-version:
 	@if [ -z "$(VERSION)" ]; then
@@ -59,3 +67,90 @@ show-version:
 	printf '  %-32s %s\n' "$(CODEX)"        "$$(jq -r .version "$(CODEX)")"
 	printf '  %-32s %s\n' "$(VERSION_FILE)" "$$(tr -d '[:space:]' < "$(VERSION_FILE)")"
 	printf '  %-32s %s\n' "$(CARGO_TOML)"   "$$(grep -E '^version = ' "$(CARGO_TOML)" | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+
+# ---------------------------------------------------------------------------
+# Local dev-binary swap (no release needed).
+#
+# Point the installed `atdd` at the locally-built v2 dev binary via a SYMLINK,
+# so the `lsp`/`stack` verbs are available WITHOUT cutting a snapshot/prerelease,
+# and so future `cargo build --release` rebuilds are live immediately.
+#
+# Safe vs skills/ensure-atdd.sh: that script only re-downloads when skills/VERSION
+# contains a `-` (snapshot) OR the installed `--version` differs from skills/VERSION.
+# The dev binary's version must equal skills/VERSION (both 1.1.2 today) so the
+# bootstrap stays a no-op and the swap survives every entry-skill run. If you bump
+# one, bump the other (make set-version) or ensure-atdd.sh will overwrite the swap.
+#
+#   make use-dev-atdd       # symlink installed atdd -> dev build (backs up the real one)
+#   make use-release-atdd   # restore the real release binary (or re-download it)
+#   make build-dev-atdd     # cargo build --release in the sibling atdd-cli
+#   make atdd-status        # show which atdd is active + versions
+# ---------------------------------------------------------------------------
+
+build-dev-atdd:
+	@cd "$(ATDD_CLI)" && cargo build --release
+	echo "built: $(DEV_ATDD)"
+
+use-dev-atdd:
+	@dev="$(DEV_ATDD)"
+	if [ ! -x "$$dev" ]; then
+	  echo "error: dev binary not found/executable: $$dev" >&2
+	  echo "  build it first:  make build-dev-atdd   (or: cd $(ATDD_CLI) && cargo build --release)" >&2
+	  exit 1
+	fi
+	if ! "$$dev" lsp --help >/dev/null 2>&1; then
+	  echo "error: $$dev has no 'lsp' verb — is this really the v2 build?" >&2; exit 1
+	fi
+	ver="$$(tr -d '[:space:]' < "$(VERSION_FILE)")"
+	case "$$ver" in
+	  *-*) echo "WARNING: skills/VERSION='$$ver' is a snapshot — ensure-atdd.sh will re-download and OVERWRITE this swap on the next bootstrap. Use a plain X.Y.Z to keep it." >&2 ;;
+	esac
+	installed="$$(command -v atdd || true)"
+	[ -n "$$installed" ] || installed="$(ATDD_INSTALL_DIR)/atdd"
+	mkdir -p "$$(dirname "$$installed")"
+	if [ -e "$$installed" ] && [ ! -L "$$installed" ]; then
+	  if [ ! -e "$$installed.release-backup" ]; then
+	    mv "$$installed" "$$installed.release-backup"
+	    echo "backed up release binary -> $$installed.release-backup"
+	  else
+	    rm -f "$$installed"
+	  fi
+	fi
+	ln -sf "$$dev" "$$installed"
+	echo "swapped: $$installed -> $$dev"
+	echo "  version : $$("$$installed" --version 2>&1)"
+	echo "  lsp verb: $$("$$installed" lsp --help >/dev/null 2>&1 && echo present || echo MISSING)"
+	echo "Dev rebuilds are now live automatically (symlink). Restore with: make use-release-atdd"
+
+use-release-atdd:
+	@installed="$$(command -v atdd || true)"
+	[ -n "$$installed" ] || installed="$(ATDD_INSTALL_DIR)/atdd"
+	if [ -e "$$installed.release-backup" ]; then
+	  rm -f "$$installed"
+	  mv "$$installed.release-backup" "$$installed"
+	  echo "restored release binary: $$installed ($$("$$installed" --version 2>&1))"
+	else
+	  if [ -L "$$installed" ]; then rm -f "$$installed"; fi
+	  echo "no backup found — re-downloading the release binary via ensure-atdd.sh"
+	  bash "$(CURDIR)/skills/ensure-atdd.sh"
+	fi
+
+atdd-status:
+	@installed="$$(command -v atdd || true)"
+	[ -n "$$installed" ] || installed="$(ATDD_INSTALL_DIR)/atdd"
+	echo "installed atdd : $$installed"
+	if [ -L "$$installed" ]; then
+	  echo "  kind         : symlink -> $$(readlink "$$installed")"
+	elif [ -e "$$installed" ]; then
+	  echo "  kind         : real file"
+	else
+	  echo "  kind         : (not present)"
+	fi
+	if [ -e "$$installed" ]; then
+	  echo "  version      : $$("$$installed" --version 2>&1)"
+	  echo "  has lsp verb : $$("$$installed" lsp --help >/dev/null 2>&1 && echo yes || echo no)"
+	fi
+	[ -e "$$installed.release-backup" ] && echo "  backup       : $$installed.release-backup" || true
+	echo "dev build      : $(DEV_ATDD)"
+	if [ -x "$(DEV_ATDD)" ]; then echo "  version      : $$("$(DEV_ATDD)" --version 2>&1)"; fi
+	echo "skills/VERSION : $$(tr -d '[:space:]' < "$(VERSION_FILE)")"
