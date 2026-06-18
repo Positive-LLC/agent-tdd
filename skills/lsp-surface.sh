@@ -4,19 +4,27 @@
 #
 # Both the Root Agent (skills/atdd/SKILL.md) and the Notes Agent
 # (skills/atdd-plan/CORE.md) run this at bootstrap, right after ensure-atdd.sh.
-# It is the DETERMINISTIC half of "bootstrap LSP surfacing" (Phase C):
+# It is the DETERMINISTIC, read-only half of "bootstrap LSP surfacing" (Phase C):
 #   1. detect the symbol-precise languages used in the repo (manifests + files),
-#   2. cross-check `atdd lsp list` (status=="ok" == a working binary),
-#   3. emit the gap as JSON on stdout; a human-readable summary on stderr.
-# The AGENT does the rest (ask the human, install, `atdd lsp register`).
+#   2. resolve the repo's atdd slug (never null, never asks the human),
+#   3. cross-check `atdd lsp list` (status=="ok" == a working binary),
+#   4. emit the gap as JSON on stdout; a human-readable summary on stderr.
+# The AGENT does the rest (ask which server, install, repo/lsp register).
 #
 # Usage:
 #   lsp-surface.sh [--repo <owner/repo>] [--path <dir>]
-#     --repo  atdd repo slug to scope the registry to. Default: derived from the
-#             git origin (github), else the nearest .atdd/manifest.json home_repo.
+#     --repo  atdd repo slug to scope the registry to. Default, in order:
+#             --repo -> git origin (github) -> .atdd/manifest.json home_repo ->
+#             atdd's own registry (matched by this path) -> "local/<folder>".
+#             The slug is NEVER null; the human is NEVER asked for it.
 #     --path  repo working tree to scan. Default: the git toplevel of cwd.
 #
-# stdout: {"repo":<slug|null>,"path":<dir>,"detected":[..],"covered":[..],"missing":[..]}
+# stdout: {"repo":<slug>,"repo_registered":<bool>,"path":<dir>,
+#          "detected":[..],"covered":[..],"missing":[..]}
+#   repo            the resolved slug (never null)
+#   repo_registered whether <slug> is registered to the active atdd project
+#                   (false => the agent must `atdd repo register` before it can
+#                   `atdd lsp register`; coverage is reported as all-missing)
 # exit:   0 always (advisory). Hard errors (bad args / no git / no jq) exit 2.
 set -euo pipefail
 
@@ -41,8 +49,12 @@ if [[ -z "$SCAN_DIR" ]]; then
     || die "not inside a git repo and no --path given"
 fi
 [[ -d "$SCAN_DIR" ]] || die "scan path does not exist: $SCAN_DIR"
+CANON_DIR="$(cd "$SCAN_DIR" && pwd -P)"
 
-# derive the repo slug if not given: git origin (github) -> manifest home_repo
+# --- resolve the repo slug (never null, never ask) ---------------------------
+# --repo -> git origin (github) -> manifest home_repo -> atdd registry (by this
+# path) -> "local/<folder>". Then record whether the slug is registered to the
+# active atdd project (needed before `atdd lsp list/register --repo` work).
 origin_nwo() {
   local url; url="$(git -C "$SCAN_DIR" remote get-url origin 2>/dev/null)" || return 1
   url="${url%.git}"
@@ -52,13 +64,24 @@ origin_nwo() {
     *) return 1 ;;
   esac
 }
+REGJSON="$(atdd repo list 2>/dev/null || echo '[]')"
+[[ "$REGJSON" == \[* ]] || REGJSON='[]'   # guard: must be a JSON array
 [[ -n "$REPO_SLUG" ]] || REPO_SLUG="$(origin_nwo || true)"
 if [[ -z "$REPO_SLUG" && -f "${SCAN_DIR}/.atdd/manifest.json" ]]; then
   REPO_SLUG="$(jq -r '.home_repo // empty' "${SCAN_DIR}/.atdd/manifest.json" 2>/dev/null || true)"
 fi
+if [[ -z "$REPO_SLUG" ]]; then   # reuse atdd's own registered name for this path
+  REPO_SLUG="$(jq -r --arg a "$SCAN_DIR" --arg b "$CANON_DIR" \
+    'map(select(.localPath==$a or .localPath==$b)) | (.[0].nameWithOwner // empty)' \
+    <<<"$REGJSON" 2>/dev/null || true)"
+fi
+[[ -n "$REPO_SLUG" ]] || REPO_SLUG="local/$(basename "$CANON_DIR")"   # never-null floor
+REPO_REGISTERED="$(jq -r --arg s "$REPO_SLUG" 'any(.[]; .nameWithOwner==$s)' <<<"$REGJSON" 2>/dev/null || echo false)"
+[[ "$REPO_REGISTERED" == "true" || "$REPO_REGISTERED" == "false" ]] || REPO_REGISTERED=false
 
-# detect symbol-precise languages: a manifest-file signal OR a source-extension
-# signal. Shell/markdown are intentionally absent (file-granularity downgrade).
+# --- detect symbol-precise languages -----------------------------------------
+# a manifest-file signal OR a source-extension signal. Shell/markdown are
+# intentionally absent (file-granularity downgrade).
 _has_file() { [[ -e "${SCAN_DIR}/$1" ]]; }
 _has_ext()  { find "$SCAN_DIR" -path "${SCAN_DIR}/.git" -prune -o -type f -name "$1" -print -quit 2>/dev/null | grep -q .; }
 detect_langs() {
@@ -72,34 +95,33 @@ detect_langs() {
 }
 mapfile -t DETECTED < <(detect_langs | sed '/^$/d' | sort -u)
 
-# covered langs = status=="ok" registry rows for this repo (empty if list fails)
+# --- covered langs = status=="ok" rows (only queryable if registered) --------
 COVERED_JSON='[]'
-if [[ -n "$REPO_SLUG" ]]; then
+if [[ "$REPO_REGISTERED" == "true" ]]; then
   if LIST="$(atdd lsp list --repo "$REPO_SLUG" 2>/dev/null)"; then
     COVERED_JSON="$(jq -c '[.lsps[]? | select(.status=="ok") | .lang]' <<<"$LIST" 2>/dev/null || echo '[]')"
-  else
-    log "could not list lsps for ${REPO_SLUG} (repo not registered to the project yet?) — treating all detected langs as uncovered"
   fi
 else
-  log "repo slug unknown (no github origin, no manifest home_repo) — registry not scoped; treating all detected langs as uncovered"
+  log "repo ${REPO_SLUG} not registered to the active atdd project — coverage unknown; treating all detected langs as missing"
 fi
 
-# missing = detected - covered; emit the report
+# --- missing = detected - covered; emit the report (repo is never null) ------
 DETECTED_JSON="$(printf '%s\n' "${DETECTED[@]:-}" | sed '/^$/d' | jq -R . | jq -sc .)"
 REPORT="$(jq -nc \
-  --argjson detected "$DETECTED_JSON" \
-  --argjson covered  "$COVERED_JSON" \
-  --arg     repo     "${REPO_SLUG:-}" \
-  --arg     path     "$SCAN_DIR" '
+  --argjson detected   "$DETECTED_JSON" \
+  --argjson covered    "$COVERED_JSON" \
+  --argjson registered "$REPO_REGISTERED" \
+  --arg     repo       "$REPO_SLUG" \
+  --arg     path       "$SCAN_DIR" '
   ($detected - $covered) as $missing
-  | { repo: ($repo | if . == "" then null else . end),
+  | { repo: $repo, repo_registered: $registered,
       path: $path, detected: $detected, covered: $covered, missing: $missing }')"
 printf '%s\n' "$REPORT"
 
 # human summary on stderr; advisory exit 0 regardless of the gap
 if [[ "$(jq -r '.missing | length' <<<"$REPORT")" -gt 0 ]]; then
-  log "MISSING LSP for: $(jq -r '.missing | join(", ")' <<<"$REPORT") (repo ${REPO_SLUG:-<unknown>})"
-  log "advisory only — provisioning is the agent's job: ask the human -> install -> atdd lsp register"
+  log "MISSING LSP for: $(jq -r '.missing | join(", ")' <<<"$REPORT") (repo ${REPO_SLUG}, registered=${REPO_REGISTERED})"
+  log "advisory only — provisioning is the agent's job: ask the human -> install -> (atdd repo register if needed) -> atdd lsp register"
 else
   log "all detected languages have a working LSP (or no symbol-precise language detected)"
 fi

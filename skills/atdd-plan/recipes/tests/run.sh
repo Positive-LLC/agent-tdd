@@ -184,6 +184,25 @@ jchk "broken binary -> rust missing again" '.missing|index("rust")' "$OUT"
 
 # (e) a coverage gap is ADVISORY: the recipe still exits 0
 assert_rc "missing lsp is advisory (exit 0)" 0
+
+# (f) slug auto-derived (no --repo): manifest home_repo, repo registered
+surface; assert_ok "surface ok with no --repo (derives slug)"
+jchk "repo derived == acme/home"        '.repo=="acme/home"'      "$OUT"
+jchk "repo_registered true"             '.repo_registered==true'  "$OUT"
+
+# (g) reverse-lookup: no manifest + no origin -> slug from atdd registry by path
+rm -f "${WORK}/.atdd/manifest.json"
+surface; assert_ok "surface ok with no manifest (registry path-match)"
+jchk "repo from registry == acme/home"  '.repo=="acme/home"'      "$OUT"
+jchk "repo_registered true (g)"         '.repo_registered==true'  "$OUT"
+
+# (h) folder-name fallback: a fresh, unregistered dir -> repo=local/<folder>, never null
+FRESH="${WORK}/freshsub"; mkdir -p "$FRESH"; : > "${FRESH}/go.mod"
+surface --path "$FRESH"; assert_ok "surface ok on unregistered dir (folder fallback)"
+jchk "repo == local/freshsub (never null)" '.repo=="local/freshsub"' "$OUT"
+jchk "repo_registered false"               '.repo_registered==false' "$OUT"
+jchk "go detected"                          '.detected|index("go")'  "$OUT"
+jchk "go missing (unregistered)"            '.missing|index("go")'   "$OUT"
 gh_clean
 teardown_repo
 

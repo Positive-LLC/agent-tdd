@@ -141,8 +141,9 @@ In order, before free conversation:
    you can see the repo really uses (e.g. java, ruby, c/c++), and quietly skip an entry that is
    plainly a stray tool/config file. Then, for each language in the refined `missing` set, tell
    the human in one line which languages lack an LSP and offer to provision each — detect the
-   server, ask which to install, install it, then
-   `atdd lsp register --repo <home_repo> --lang <lang> --bin <path>`. This is **advisory**: never
+   server, ask which to install, install it, then register it: if the JSON's `repo_registered`
+   is `false`, first `atdd repo register <home_repo> <abs-repo-path>` to add the repo to the
+   project, then `atdd lsp register --repo <home_repo> --lang <lang> --bin <path>`. This is **advisory**: never
    block planning on it. For a multi-repo project, repeat per member repo you actually plan into
    (use that member's `owner/repo` as `--repo`). The provisioning detail belongs in the
    NotebookIssue, not the human dialogue.
