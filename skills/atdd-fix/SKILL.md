@@ -57,6 +57,8 @@ First, **ensure the `atdd` binary** is installed: run `bash ${CLAUDE_SKILL_DIR}/
 (see `${CLAUDE_SKILL_DIR}/../INIT_SETUP.md`) — the planning recipes below depend on it. Don't
 proceed until `atdd ping` works.
 
+CORE.md §2 also **surfaces missing LSPs** (step 1b) once the project is pinned — handle its advisory provisioning prompt there; never block planning on a coverage gap.
+
 Then follow CORE.md §2 immediately:
 
 1. **Ensure the manifest + the active atdd project** (CORE.md §2 has the full rule):

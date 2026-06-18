@@ -132,6 +132,21 @@ In order, before free conversation:
      when there is no genuine choice. The pick is pinned (`manifest.project_slug`) and not
      re-asked on later runs; to switch deliberately, run `project-set.sh <other-slug>` (or set
      `ATDD_PROJECT`). Every recipe scopes its `atdd` calls to this project automatically.
+1b. **Surface LSP coverage (advisory — never blocks).** Now that the project is pinned and the
+   home repo is registered, run `bash ${CLAUDE_SKILL_DIR}/../lsp-surface.sh --repo <home_repo>`
+   (the `home_repo` is in the manifest JSON from step 1). Read its `missing` array: each entry is
+   a symbol-precise language the repo uses with no working LSP in the stack registry. **Treat
+   `detected` as a floor, not the final word (hybrid):** the recipe checks a fixed set (rust,
+   python, typescript, javascript, go) by file pattern — add any *other* symbol-precise language
+   you can see the repo really uses (e.g. java, ruby, c/c++), and quietly skip an entry that is
+   plainly a stray tool/config file. Then, for each language in the refined `missing` set, tell
+   the human in one line which languages lack an LSP and offer to provision each — detect the
+   server, ask which to install, install it, then
+   `atdd lsp register --repo <home_repo> --lang <lang> --bin <path>`. This is **advisory**: never
+   block planning on it. For a multi-repo project, repeat per member repo you actually plan into
+   (use that member's `owner/repo` as `--repo`). The provisioning detail belongs in the
+   NotebookIssue, not the human dialogue.
+
 2. **Read the NotebookIssue body** (the topology index) and the comment for the active head,
    if any. Use `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-head-get.sh` for the head comment.
 3. **Pick the active head** with
