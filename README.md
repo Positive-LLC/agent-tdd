@@ -42,6 +42,7 @@ Prefix per host: Claude Code `/agent-tdd:<command>`, OpenCode `/<command>`, Code
 - **tmux** ≥ 3.0.
 - **git** ≥ 2.5 (worktree support).
 - The **`atdd`** CLI — the local work-item store the inner flow runs on (replaces GitHub for issues/labels/deps and the green-and-merge step). The plugin auto-installs it on first use (`skills/ensure-atdd.sh`); no manual setup.
+- **Language servers (LSP) — optional.** At startup each agent surfaces any language your repo uses that has no working LSP registered (the `atdd` Stack model uses an LSP to fact-check the architecture map) and offers to install + register one. This is **advisory** — you can skip it; it never blocks the workflow.
 - **`gh`** (GitHub CLI) — **optional**, used only for the final hand-off PR to a base branch. The inner flow (plan → red tests → green → integrate) is fully local: no PR, no CI.
 
 ## Install

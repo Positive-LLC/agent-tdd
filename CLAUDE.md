@@ -17,7 +17,8 @@ As of v0.10.0 the plugin is also **two layers**:
 
 There are **no build/lint/test commands**. Validation is:
 
-- `bash -n skills/atdd/recipes/*.sh skills/atdd-plan/recipes/*.sh skills/atdd-from-issue/recipes/*.sh` — syntax-check shell scripts (the only "compile" step).
+- `bash -n skills/atdd/recipes/*.sh skills/atdd-plan/recipes/*.sh skills/atdd-from-issue/recipes/*.sh skills/lsp-surface.sh` — syntax-check shell scripts (the only "compile" step). `skills/lsp-surface.sh` is a **top-level shared recipe** (sibling of `ensure-atdd.sh`; Phase C bootstrap LSP surfacing), not under a `recipes/` dir.
+- `bash skills/atdd-plan/recipes/tests/run.sh` — the hermetic no-LLM gate (drives the real `atdd` under a temp `ATDD_HOME`); since Phase C it also covers `lsp-surface.sh` (`== lsp-surface ==`) and a `== bootstrap wiring ==` grep gate. Needs a built `../atdd-cli/target/debug/atdd` ≥ commit `377a013` (the `lsp list` `status` field).
 - Manual end-to-end smoke tests in a throwaway repo (see ROADMAP.md "Smoke-Test Risks").
 
 ## Source-of-truth hierarchy
@@ -102,6 +103,12 @@ After planning, on a single human "go" (the go-gate), the Notes Agent enters orc
   edits all five at once (`make show-version` prints them); never hand-edit one file.
   It accepts strict `X.Y.Z` *or* an `X.Y.Z-<suffix>` prerelease (e.g. `1.2.0-snapshot`).
   (Override the sibling path with `ATDD_CLI=/path/to/atdd-cli` if your layout differs.)
+- **Iterate against a local `atdd-cli` build without a release — `make use-dev-atdd`.** The
+  `lsp`/`stack` verbs (Phase B/C) need a v2 build of the tool; `make use-dev-atdd` symlinks the
+  installed `atdd` (`~/.local/bin/atdd`) at `../atdd-cli/target/release/atdd` (backing up the real
+  binary), so `cargo build --release` rebuilds are live immediately and `ensure-atdd.sh` stays a
+  no-op as long as the dev binary's version == `skills/VERSION`. `make use-release-atdd` restores
+  the shipped binary; `make atdd-status` shows which is active. No release/snapshot needed.
 - **Two release channels (`.github/workflows/release.yml`, triggered by tag push):**
   - **Production `X.Y.Z` (no `-`) is IMMUTABLE.** If the `v<version>` GitHub Release
     already exists, the workflow refuses to overwrite it — cut a new version instead.
