@@ -187,4 +187,14 @@ assert_rc "missing lsp is advisory (exit 0)" 0
 gh_clean
 teardown_repo
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== bootstrap wiring (no-LLM coordination gate) =="
+SKILLS_DIR="$(cd -- "${RECIPES_DIR}/../.." && pwd)"
+grep -q 'lsp-surface.sh' "${SKILLS_DIR}/atdd/SKILL.md" \
+  && pass "Root SKILL.md wires lsp-surface.sh" \
+  || fail "Root SKILL.md wires lsp-surface.sh" "no reference to lsp-surface.sh"
+grep -q 'lsp-surface.sh' "${SKILLS_DIR}/atdd-plan/CORE.md" \
+  && pass "Notes CORE.md wires lsp-surface.sh" \
+  || fail "Notes CORE.md wires lsp-surface.sh" "no reference to lsp-surface.sh"
+
 summary
