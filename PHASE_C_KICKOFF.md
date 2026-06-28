@@ -43,13 +43,20 @@ The **LSP is global and cross-cutting**: one facility verifies every code-backed
 Interface, at every level. It is not a layer. The meaning-vs-fact boundary is the determinism
 line (`../atdd-cli/STACK.md` §6–§7).
 
-`atdd-cli` carries two built phases on `v2`:
-- **Phase A** — the stack model (`layer`/`interface`/`process`/`pipeline` verbs, `stack graph`,
+`atdd-cli` carries three built phases on `v2`:
+- **Phase A** — the stack model (`layer`/`interface`/`process`/`pipeline` verbs,
   write-time cycle guard, `layer at` + work-item link bridge, file-exists `stack verify`).
 - **Phase B** — the determinism line (`lsp` registry, `async-lsp` client + warm-server
   supervisor, anchor resolver moniker→name+kind+container fallback, semantic `stack verify` +
   `stack drift`, version-bump handling, readiness gate, structural false-drift guard). A false
   "deleted" signal is structurally impossible — the worst case is an honest "unverifiable".
+- **Phase D** — read-side navigation: `stack roots` (top Layers) + `stack zoom <id>` (one
+  node's **1-level** layer / interface / process slice; every stub carries `confidence` +
+  `drift` and re-addressable `id`, never linked issues). The old whole-stack `stack graph`
+  CLI echo is **removed** — agents navigate bite-by-bite and can never pull the whole graph;
+  the dashboard keeps the bird's-eye in-process. (`../atdd-cli/PHASE_2.md` "Phase D".) This is
+  the **consumption path** the C2 end-of-task zoom-in feeds and that a reader walks instead of
+  re-reading the code.
 
 ## The authoritative spec — READ IT before C2
 
