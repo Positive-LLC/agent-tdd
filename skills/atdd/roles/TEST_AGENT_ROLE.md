@@ -67,6 +67,9 @@ If the issue body contains a `## Needs Clarification` section, **pause** (see §
 
 You are in `${WORKTREE_DIR}` on branch `${TEST_BRANCH}`. Explore enough to write good tests:
 
+> **Orient (READ the Stack):** `atdd --project "$ATDD_PROJECT" stack roots` then `stack zoom <id>` to
+> see the layer/interface the code-under-test sits in, so your test boundary matches the real one.
+
 - Read the file at the Subject Under Test path. If `path:identifier`, find the identifier inside the file.
 - Detect the test framework. Look for `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc. Examples:
   - JS/TS with vitest → tests in `**/*.test.ts`, run with `npx vitest run`.
@@ -109,6 +112,28 @@ atdd test-issue done ${ISSUE_NUM} \
 Supply one `--test-command` per command (e.g. `npx vitest run path/to/foo.test.ts`, `pytest tests/test_foo.py`). You no longer edit the work-item body for a branch — the branch and head SHA are recorded later by the Impl Agent's green-check.
 
 If a `## Needs Clarification` section was present and Root resolved it, remove that section now via `atdd issue edit ${ISSUE_NUM} --title <title> --body-file -` (feeding the cleaned body). Do not touch any other section.
+
+### Step 6.5: End-of-task Stack zoom-in (mandatory — before Step 7)
+
+You have just pinned this issue's behavioral contract — your understanding of the boundary is
+sharpest now. Record it, then verify. Contract: the "end-of-task zoom-in" section of
+`${PLUGIN_DIR}/../STACK_USAGE.md`.
+
+1. Declare the interface/contract you pinned as `proposed` (the impl does not exist yet),
+   anchored at a file that **already exists** (your test file, or the SUT file) — never at a
+   `#symbol` the impl has not written yet:
+   ```bash
+   atdd --project "$ATDD_PROJECT" interface add --id <id> --upper <L> --lower <L> --comm <type> \
+     --at '<owner/repo>:<existing-path>' --by llm --confidence proposed
+   atdd --project "$ATDD_PROJECT" layer link <slug> --issue <owner/repo>#${ISSUE_NUM}
+   ```
+2. Verify + record (the gate):
+   ```bash
+   bash "${PLUGIN_DIR}/recipes/stack-zoom.sh" --project "$ATDD_PROJECT" \
+     --marker "${STATUS_DIR}/issue-${ISSUE_NUM}.stack-zoom-test"
+   ```
+   Exit 0 → proceed to Step 7 (spawn impl). Exit 3 → point the anchor at a file that exists, re-run.
+   **Do not spawn the impl agent until this exits 0.**
 
 ### Step 7: Spawn the Impl Agent
 

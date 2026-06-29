@@ -246,6 +246,16 @@ for f in atdd/SKILL.md atdd-plan/CORE.md atdd/roles/IMPL_AGENT_ROLE.md atdd/role
 done
 [ -f "${SKILLS_DIR}/STACK_USAGE.md" ] && pass "STACK_USAGE.md (canonical guide) exists" \
   || fail "STACK_USAGE.md exists" "missing"
+grep -q 'stack-zoom.sh' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md" \
+  && pass "IMPL role doc wires the end-of-task zoom-in (stack-zoom.sh)" \
+  || fail "IMPL role doc wires stack-zoom.sh" "no reference"
+grep -q 'stack-zoom.sh' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md" \
+  && pass "TEST role doc wires the end-of-task zoom-in (stack-zoom.sh)" \
+  || fail "TEST role doc wires stack-zoom.sh" "no reference"
+grep -q 'stack-zoom-impl' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md" \
+  && pass "IMPL role doc uses the impl marker name" || fail "IMPL marker name" "no issue-<N>.stack-zoom-impl"
+grep -q 'confidence proposed' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md" \
+  && pass "TEST role doc declares its contract as proposed" || fail "TEST proposed" "no 'confidence proposed'"
 
 # ────────────────────────────────────────────────────────────────────────────
 echo "== STACK_USAGE.md sync marker (plugin <-> atdd-cli must not drift) =="

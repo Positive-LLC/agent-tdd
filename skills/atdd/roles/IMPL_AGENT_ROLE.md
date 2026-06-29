@@ -80,6 +80,9 @@ Detect the test runner from project files (package.json, pyproject.toml, etc.). 
 
 ### Step 3: Implement
 
+> **Orient first (READ the Stack):** before you change code, `atdd --project "$ATDD_PROJECT" stack roots`
+> then `stack zoom <id>` to see which layer/interface you are about to touch. See `${PLUGIN_DIR}/../STACK_USAGE.md`.
+
 Make the tests pass. Iterate as needed within this session — that's allowed and expected. Run tests after each meaningful change.
 
 Don't:
@@ -139,6 +142,26 @@ atdd record-green ${ISSUE_NUM} \
 - `record-green` exits nonzero → green failed → set `green: false`, terminal outcome `failed`.
 
 Do not loop. If the green-check fails, do **one** debugging pass (fix, commit, push, re-run `record-green` once); if it still fails, accept gave-up with `green: false`.
+
+### Step 6.5: End-of-task Stack zoom-in (mandatory — before Step 7)
+
+Your understanding of what you built is sharpest now. Update the Stack for the boxes you
+**touched** (only those — never the whole subtree), then verify. Contract: the "end-of-task
+zoom-in" section of `${PLUGIN_DIR}/../STACK_USAGE.md`.
+
+1. Declare what you created/changed, anchored at the real symbol, `verified` (promote any
+   `proposed` box the Test agent left for this contract):
+   ```bash
+   atdd --project "$ATDD_PROJECT" layer edit <slug> --at '<owner/repo>:<path>#<Symbol>' --by llm --confidence verified
+   atdd --project "$ATDD_PROJECT" layer link <slug> --issue <owner/repo>#${ISSUE_NUM}
+   ```
+2. Verify + record (the gate):
+   ```bash
+   bash "${PLUGIN_DIR}/recipes/stack-zoom.sh" --project "$ATDD_PROJECT" \
+     --layer <touched-layer-slug> --marker "${STATUS_DIR}/issue-${ISSUE_NUM}.stack-zoom-impl"
+   ```
+   Exit 0 → proceed to Step 7. Exit 3 (BLOCKED) → fix the anchor / register the LSP, re-run.
+   **Do not write `.done` until this exits 0.** (A task that changed no boundary still runs it.)
 
 ### Step 7: Write terminal status
 
