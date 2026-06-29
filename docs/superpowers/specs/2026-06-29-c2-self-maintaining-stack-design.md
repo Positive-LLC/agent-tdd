@@ -6,8 +6,8 @@
 > (shell + markdown + one Claude Code hook) — **no `atdd-cli` product/schema changes expected** (at
 > most a test-gate addition in `atdd-cli/tests/wave-coordination.sh`).
 >
-> **STATUS — design, awaiting human review (2026-06-29).** Not yet planned or built. After approval
-> this becomes a `writing-plans` plan under `docs/superpowers/plans/`.
+> **STATUS — design APPROVED (2026-06-29); all three open decisions confirmed as recommended.**
+> Next: a `writing-plans` plan under `docs/superpowers/plans/`, then human review before any code.
 
 ## Goal
 
@@ -179,17 +179,18 @@ A rich map, not a light touch — but **without over-taxing every task**:
 - **Recipe = deterministic testable floor; markdown = judgment + human-facing** (the plugin's standing
   hybrid pattern).
 
-## Open decisions to confirm (at this spec review)
+## Decisions confirmed (2026-06-29 human review)
 
-1. **Ship the Layer-3 `Stop` hook, or keep enforcement at Layers 1+2 only?** The hook buys *true*
-   harness-level un-skippability for Test/Impl, at the cost of coupling the plugin to Claude Code's
-   hook system (global firing → context detection, the 8-block dance, the headless caveat). Layers 1+2
-   alone are already strong and fully testable with no LLM. **Recommendation: ship it for Test/Impl as
-   a backstop**, but it is cleanly separable if you'd rather not.
-2. **The thoroughness floor** — is "verify the box you're in even when you declared nothing new" the
-   right minimum, or too much for trivial tasks?
-3. **Notes Touch-1 as `proposed` boxes** — confirm you want Notes to predict the shape before code
-   exists (plan-as-prediction), versus recording only what's already real.
+All three confirmed **as recommended**:
+
+1. **Ship the Layer-3 `Stop` hook** for Test/Impl as a hard backstop (it buys true harness-level
+   un-skippability; it couples to Claude Code's hook system — global firing → context detection, the
+   8-block guard, the headless caveat — but is cleanly separable later). **CONFIRMED: ship it.**
+2. **Keep the thoroughness floor** — even a task that creates no new box must `stack verify` the box it
+   sits in. **CONFIRMED: keep the floor.**
+3. **Notes Touch-1 declares `proposed` boxes** — Notes predicts the architectural shape before the
+   code exists; the workers + the LSP verify it (plan-as-prediction, the determinism line).
+   **CONFIRMED: yes.**
 
 ## Out of scope (not C2)
 
