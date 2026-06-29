@@ -469,7 +469,18 @@ When the cohort converges (`EVENT=cohort-ready`, or all members settled):
    ( cd <repo_path> && bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/terminate-root.sh <root_id> <task> )
    bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/issue-close.sh <sub_ref>   # SubIssue: done (invariant 5)
    ```
-5. When **all** SubIssues of the RootIssue are closed, close the **RootIssue** with
+5. When **all** SubIssues of the RootIssue are closed:
+
+   **Before closing — Touch-2 (verify the prediction held):** run the Stack zoom-in on the boxes you
+   declared in CORE §5 step 7.5; promote `proposed`→`verified`, fix anchors, or record honest drift.
+   ```bash
+   bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/stack-zoom.sh --project <slug> \
+     --marker <notebook-dir>/<root-ref>.stack-zoom-notes-verified
+   ```
+   A non-zero exit is signal, not a blocker here (the human is in this review) — surface the drift in
+   the close.
+
+   Then close the **RootIssue** with
    the human in a short review (CORE.md §9), run `notebook-index-update.sh`, clear
    `current_rootissue`, and loop (§3.2) to the next available RootIssue.
 

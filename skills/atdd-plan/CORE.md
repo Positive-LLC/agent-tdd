@@ -269,6 +269,9 @@ Planning mode never reads `members`.
 
 Repeat per head, until the head is **ready**:
 
+0. **Orient (READ the Stack).** `atdd --project <slug> stack roots` to place this head in the
+   existing architecture before you trace code. See `${CLAUDE_SKILL_DIR}/../STACK_USAGE.md`.
+
 1. **Investigate privately.** Go deep into the repos. Trace code. Figure it out fully.
    Write everything to the head's NotebookIssue comment via `notebook-head-set.sh`. Say
    nothing to the human yet.
@@ -284,6 +287,16 @@ Repeat per head, until the head is **ready**:
 6. **Write the issues**: `root-create.sh` for the RootIssue body, `sub-create.sh` per
    SubIssue. Label each fully-specced SubIssue with `atdd:ready` via `ready-mark.sh`.
 7. After each batch of writes, regenerate the index with `notebook-index-update.sh`.
+
+7.5. **Declare the intended shape (Touch-1, before you move on).** Record the layers/interfaces this
+   RootIssue will add or move as a *prediction* — `--by llm --confidence proposed`, anchored where you
+   expect the code to land — and `layer link --issue` the RootIssue. The workers + the LSP verify it
+   later (Touch-2). Then run the recipe so the prediction is registered + checked:
+   ```bash
+   bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/stack-zoom.sh --project <slug> \
+     --marker <notebook-dir>/<root-ref>.stack-zoom-notes-declared
+   ```
+
 8. Move to the next head only when the human is done with this one. Pick it with
    `topology-next-urgent.sh` — do not compute the graph in your head.
 

@@ -256,6 +256,12 @@ grep -q 'stack-zoom-impl' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md" \
   && pass "IMPL role doc uses the impl marker name" || fail "IMPL marker name" "no issue-<N>.stack-zoom-impl"
 grep -q 'confidence proposed' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md" \
   && pass "TEST role doc declares its contract as proposed" || fail "TEST proposed" "no 'confidence proposed'"
+grep -q 'stack-zoom.sh' "${SKILLS_DIR}/atdd/PROTOCOL.md" \
+  && pass "Root PROTOCOL wires the post-integrate zoom-in" || fail "Root PROTOCOL wires stack-zoom.sh" "no reference"
+grep -q 'stack-zoom.sh' "${SKILLS_DIR}/atdd-plan/CORE.md" \
+  && pass "Notes CORE wires Touch-1 (declare proposed shape)" || fail "Notes CORE wires stack-zoom.sh" "no reference"
+grep -q 'stack-zoom.sh' "${SKILLS_DIR}/atdd-plan/ORCHESTRATE.md" \
+  && pass "Notes ORCHESTRATE wires Touch-2 (verify before close)" || fail "Notes ORCHESTRATE wires stack-zoom.sh" "no reference"
 
 # ────────────────────────────────────────────────────────────────────────────
 echo "== STACK_USAGE.md sync marker (plugin <-> atdd-cli must not drift) =="
