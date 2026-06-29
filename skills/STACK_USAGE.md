@@ -1,7 +1,7 @@
 <!-- CANONICAL agent-facing copy. Mirrors atdd-cli/STACK_USAGE.md (the tool repo);
      keep the two in sync. All four Agent-TDD agents read THIS file (one source,
      many references) via ${CLAUDE_SKILL_DIR}/../STACK_USAGE.md — never paste it. -->
-<!-- STACK-USAGE-SYNC: v1  (shared drift marker — bump in BOTH files when either's
+<!-- STACK-USAGE-SYNC: v2  (shared drift marker — bump in BOTH files when either's
      SUBSTANCE changes; atdd-cli/tests/stack-usage-sync.sh fails until they match. The
      two docs are NOT byte-identical by design, so this marker — not a diff — is the gate.) -->
 
@@ -137,6 +137,45 @@ reach it by normal `roots → zoom` (you never need its id ahead of time).
 - Output is JSON on stdout (pipe to `jq`); diagnostics/errors are on stderr; a non-zero exit means
   drift/blocked/error — gate on the exit code, not on grepping text.
 - Human bird's-eye of the whole graph: `atdd dashboard` (prints the URL). Agents use roots + zoom.
+
+## 6b. The end-of-task zoom-in (mandatory — the self-maintaining loop)
+
+Every agent maintains the Stack as a by-product of finishing its task, at the moment its
+understanding is sharpest. Two directions:
+
+- **READ to orient (throughout):** before you change a layer, `stack roots` then `stack zoom <id>`
+  to see where your work sits — which layer, which side of which interface. Navigate one level at a
+  time; never reconstruct the whole graph.
+- **WRITE at your sharpest moment (at the end):** declare/update **only the boxes your work touched**
+  (never the whole subtree, never boxes you only read), then run the `stack-zoom.sh` recipe — it
+  `stack verify`s the touched scope and writes the completion marker the wave keys off.
+
+**Per agent:**
+- **Test** (after authoring the red tests + recording the test command, before spawning Impl):
+  declare the *interface / behavioral contract* you pinned as `--by llm --confidence proposed`,
+  anchored at a file that **already exists** (your test file, or the SUT file) — never at a
+  `#symbol` the impl has not written yet (it would not resolve and would block you).
+- **Impl** (right after `record-green`, before writing `.done`): declare/update the *layer(s) /
+  process(es)* you created or changed as `--by llm --confidence verified`, anchored at the real
+  symbol (LSP-backed). Promote any `proposed` box the Test agent left for this contract.
+- **Root** (after `atdd integrate`, before marking the issue merged): `stack verify` the integrated
+  subtree; reconcile any cross-issue interface that only became real at merge.
+- **Notes** — two touches: **(1)** just before decomposing a RootIssue, declare the *intended* shape
+  it will change as `--by llm --confidence proposed` (a prediction); **(2)** after the cohort's final
+  merges, `stack verify` those boxes and reconcile (`proposed`→`verified`, fix anchors, or record
+  honest drift) before closing the RootIssue.
+
+**Thoroughness floor:** even a task that creates no new box runs `stack-zoom.sh` — it verifies the
+box you sit in is still accurate. Always `layer link <slug> --issue <owner/repo#N>` so the work-item
+is bridged to the box it changed.
+
+**The recipe (the deterministic gate):**
+```bash
+bash "${PLUGIN_DIR}/recipes/stack-zoom.sh" --project "$ATDD_PROJECT" \
+  --layer <touched-layer-slug> --marker "<status-dir>/issue-<N>.stack-zoom-<role>"
+```
+Exit 0 → marker written → proceed. Exit 3 (BLOCKED: drift, or a `#symbol` with no LSP) → fix the
+anchor / register the LSP, then re-run. **Do not finish your task until it exits 0.**
 
 ## 7. Verb quick-reference
 
