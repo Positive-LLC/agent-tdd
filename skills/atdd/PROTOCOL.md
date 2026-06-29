@@ -322,16 +322,15 @@ On Gate 1 (`agent-terminal`), perform in order:
    - First abort in this wave for this issue: re-spawn the test agent with the abort `exit_reason` as feedback. The issue returns to in-flight. Gate 1 is re-evaluated when the new test agent terminates.
    - Second abort in this wave for this issue: label `agent-tdd:failed`, comment on the issue with both abort reasons, escalate to human via dashboard window rename + `notify-send`.
 2. **Dedup static issues** created during the wave (§4.3 layer 2).
-3. **Drive Gate 2 (wave-merged).** For each `.done` issue: `atdd issue-done <ref>`, then `atdd integrate --root-branch agent-tdd/<task> --impl-ref <issue-ref> --worktree <root-worktree>` (plain `git merge --no-ff` of the impl branch into the Root branch + union re-verify of all merged issues' commands on the integrated branch). On success, write `merged:true` into the issue's `.done` status. On conflict or union-red, follow the conflict ladder (§3.7).
-
-   On a successful merge, **before** writing `merged:true`: run the Stack zoom-in verify on the
-   integrated subtree and reconcile any cross-issue interface that only became real at merge
-   (promote `proposed`→`verified`, fix anchors). Sharpest-moment contract: `${CLAUDE_SKILL_DIR}/../STACK_USAGE.md`.
-   ```bash
-   bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/stack-zoom.sh --project <slug> \
-     --marker <root-worktree>/.atdd/<root-id>/wave-<N>/status/wave-<N>.stack-zoom-root
-   ```
-   If it exits 3 (post-merge drift/blocked), treat it as a post-merge regression and climb §3.7.
+3. **Drive Gate 2 (wave-merged).** For each `.done` issue, in order:
+   1. `atdd issue-done <ref>`, then `atdd integrate --root-branch agent-tdd/<task> --impl-ref <issue-ref> --worktree <root-worktree>` (plain `git merge --no-ff` of the impl branch into the Root branch + union re-verify of all merged issues' commands on the integrated branch).
+   2. **On a successful merge:** run the Stack zoom-in verify on the integrated subtree and reconcile any cross-issue interface that only became real at merge (promote `proposed`→`verified`, fix anchors). Sharpest-moment contract: `${CLAUDE_SKILL_DIR}/../STACK_USAGE.md`.
+      ```bash
+      bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/stack-zoom.sh --project <slug> \
+        --marker <root-worktree>/.atdd/<root-id>/wave-<N>/status/wave-<N>.stack-zoom-root
+      ```
+      **Only if the zoom-in exits 0:** write `merged:true` into the issue's `.done` status.
+   3. **On conflict, union-red, OR zoom-in exit 3** (post-merge regression): climb the conflict ladder (§3.7).
 4. **Re-baseline.** Your cwd is already on `agent-tdd/<task>` (your Root worktree). Just pull: `git fetch origin && git pull --ff-only origin agent-tdd/<task>`. **No `git checkout`** — the main repo's main worktree is not yours to mutate.
 5. **Wave Review (autopilot).** Inspect the dedup'd backlog. Default: pick the next wave's issues yourself. Escalate to human ONLY if:
    - The backlog is empty (workflow may be terminating; see §8).
