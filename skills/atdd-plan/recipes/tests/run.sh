@@ -296,4 +296,28 @@ atdd --project "$PROJ" layer edit z/core --at 'acme/z:src/GONE.rs' >/dev/null
 [[ $rc -eq 2 ]] && pass "stack-zoom exits 2 on missing --project" || fail "stack-zoom bad-args exit" "rc=$rc"
 teardown_repo
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== stack-zoom hook (Stop-hook backstop for test/impl) =="
+HK="$(cd -- "${RECIPES_DIR}/../../.." && pwd)/hooks/stack-zoom-stop.sh"   # plugin root = skills/..
+HKDIR="$(mktemp -d)"; SD="${HKDIR}/status"; mkdir -p "$SD"
+
+# (a) not an agent context -> no-op (exit 0, no output)
+out="$(printf '{"stop_hook_active":false}' | bash "$HK")"; rc=$?
+{ [[ $rc -eq 0 && -z "$out" ]]; } && pass "hook no-ops outside an agent context" || fail "hook no-op" "rc=$rc out=$out"
+
+# (b) impl context, marker ABSENT -> block JSON
+out="$(printf '{"stop_hook_active":false}' | ATDD_ROLE=impl ATDD_ISSUE=7 ATDD_STATUS_DIR="$SD" bash "$HK")"; rc=$?
+{ [[ $rc -eq 0 ]] && jq -e '.hookSpecificOutput.decision=="block"' >/dev/null <<<"$out"; } \
+  && pass "hook blocks impl with no marker" || fail "hook block" "rc=$rc out=$out"
+
+# (c) impl context, marker PRESENT -> allow (exit 0, no output)
+: > "${SD}/issue-7.stack-zoom-impl"
+out="$(printf '{"stop_hook_active":false}' | ATDD_ROLE=impl ATDD_ISSUE=7 ATDD_STATUS_DIR="$SD" bash "$HK")"; rc=$?
+{ [[ $rc -eq 0 && -z "$out" ]]; } && pass "hook allows impl once marker exists" || fail "hook allow" "rc=$rc out=$out"
+
+# (d) loop guard: stop_hook_active=true -> allow even with no marker
+out="$(printf '{"stop_hook_active":true}' | ATDD_ROLE=impl ATDD_ISSUE=9 ATDD_STATUS_DIR="$SD" bash "$HK")"; rc=$?
+{ [[ $rc -eq 0 && -z "$out" ]]; } && pass "hook honors stop_hook_active (never locks out)" || fail "hook loop-guard" "rc=$rc out=$out"
+rm -rf "$HKDIR"
+
 summary

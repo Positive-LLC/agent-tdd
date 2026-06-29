@@ -103,7 +103,7 @@ log "capturing pane to ${LOG_DIR}/tmux.pane"
 # Mirrors launch-impl-agent.sh, which already uses this posture for impl agents
 # (trusted local repos only). opencode/codex: bare TUI, flags unverified.
 if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
-	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' claude --permission-mode bypassPermissions" Enter
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_STATUS_DIR='${STATUS_DIR}' claude --permission-mode bypassPermissions" Enter
 else
     tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ${AGENT_TDD_CLI}" Enter
 fi

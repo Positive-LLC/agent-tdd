@@ -136,6 +136,11 @@ trap cleanup EXIT HUP TERM
 
 date -Ins > "${LOG_DIR}/agent.timing.start"
 
+# C2: give the Stop hook (hooks/stack-zoom-stop.sh) the context to enforce the
+# end-of-task Stack zoom-in for this impl agent. Only test/impl set ATDD_ROLE,
+# so the hook no-ops in every other claude session.
+export ATDD_ROLE=impl ATDD_ISSUE="${ISSUE_NUM}" ATDD_STATUS_DIR="${STATUS_DIR}"
+
 # Launch the agent CLI interactively in the foreground (never `exec` — see
 # header). The per-CLI branch now selects launch FLAGS only; the prompt
 # arrives via tmux paste from spawn-impl-agent.sh after the TUI is ready.
