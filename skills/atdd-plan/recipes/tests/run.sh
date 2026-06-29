@@ -308,7 +308,7 @@ atdd --project "$PROJ" layer edit z/core --at 'acme/z:src/GONE.rs' >/dev/null
 [[ ! -f "$MK" ]] && pass "stack-zoom withholds the marker on drift" || fail "marker withheld on drift"
 
 # bad args -> exit 2
-( bash "$SZ" --marker "$MK" >/dev/null 2>&1 ); rc=$?     # missing --project (and no $ATDD_PROJECT)
+( unset ATDD_PROJECT; bash "$SZ" --marker "$MK" >/dev/null 2>&1 ); rc=$?     # missing --project (and no $ATDD_PROJECT)
 [[ $rc -eq 2 ]] && pass "stack-zoom exits 2 on missing --project" || fail "stack-zoom bad-args exit" "rc=$rc"
 teardown_repo
 

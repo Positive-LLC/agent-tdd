@@ -22,6 +22,8 @@ INPUT="$(cat 2>/dev/null || true)"
 # (the 8-block cap also backstops). Never lock an agent out.
 if command -v jq >/dev/null 2>&1; then
   [[ "$(jq -r '.stop_hook_active // false' <<<"$INPUT" 2>/dev/null)" == "true" ]] && exit 0
+elif grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true' <<<"$INPUT"; then
+  exit 0
 fi
 
 case "${ATDD_ROLE:-}" in
