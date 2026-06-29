@@ -1,6 +1,9 @@
 <!-- CANONICAL agent-facing copy. Mirrors atdd-cli/STACK_USAGE.md (the tool repo);
      keep the two in sync. All four Agent-TDD agents read THIS file (one source,
      many references) via ${CLAUDE_SKILL_DIR}/../STACK_USAGE.md — never paste it. -->
+<!-- STACK-USAGE-SYNC: v1  (shared drift marker — bump in BOTH files when either's
+     SUBSTANCE changes; atdd-cli/tests/stack-usage-sync.sh fails until they match. The
+     two docs are NOT byte-identical by design, so this marker — not a diff — is the gate.) -->
 
 # atdd Stack — build & maintain a verified architecture model
 

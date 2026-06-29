@@ -247,4 +247,24 @@ done
 [ -f "${SKILLS_DIR}/STACK_USAGE.md" ] && pass "STACK_USAGE.md (canonical guide) exists" \
   || fail "STACK_USAGE.md exists" "missing"
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== STACK_USAGE.md sync marker (plugin <-> atdd-cli must not drift) =="
+# The plugin guide and the atdd-cli alpha brief are NOT byte-identical by design;
+# a shared `<!-- STACK-USAGE-SYNC: vN -->` marker (not a diff) is the drift gate.
+# Bump it in BOTH when either's substance changes. SKIPs if the sibling atdd-cli
+# repo is not checked out next to agent-tdd.
+PLUGIN_DOC="${SKILLS_DIR}/STACK_USAGE.md"
+CLI_DOC="$(cd -- "${RECIPES_DIR}/../../../.." && pwd)/atdd-cli/STACK_USAGE.md"
+mk() { grep -oE 'STACK-USAGE-SYNC:[[:space:]]*v[0-9]+(\.[0-9]+)*' "$1" 2>/dev/null | head -1 | grep -oE 'v[0-9]+(\.[0-9]+)*'; }
+if [[ ! -f "$CLI_DOC" ]]; then
+  pass "SKIP sync marker — sibling atdd-cli not checked out ($CLI_DOC)"
+else
+  PV="$(mk "$PLUGIN_DOC")"; CV="$(mk "$CLI_DOC")"
+  [[ -n "$PV" ]] && pass "plugin guide carries a sync marker ($PV)"  || fail "plugin guide carries a sync marker" "add <!-- STACK-USAGE-SYNC: v1 -->"
+  [[ -n "$CV" ]] && pass "atdd-cli brief carries a sync marker ($CV)" || fail "atdd-cli brief carries a sync marker" "add <!-- STACK-USAGE-SYNC: v1 -->"
+  if [[ -n "$PV" && -n "$CV" ]]; then
+    [[ "$PV" == "$CV" ]] && pass "markers match ($PV) — declared in sync" || fail "markers match" "plugin=$PV vs atdd-cli=$CV — bump BOTH"
+  fi
+fi
+
 summary
