@@ -207,13 +207,44 @@ gh_clean
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
+echo "== stack-preflight (MANDATORY LSP gate #32/#33) =="
+SKILLS_DIR="$(cd -- "${RECIPES_DIR}/../.." && pwd)"
+PREFLIGHT="${SKILLS_DIR}/stack-preflight.sh"
+setup_repo
+preflight() { OUT="$( cd "$WORK" && bash "$PREFLIGHT" "$@" 2>"${WORK}/err" )" && RC=0 || RC=$?; }
+
+# (a) no symbol-precise language -> gate PASSES (exit 0), nothing missing
+preflight --repo acme/home; assert_rc "empty repo: gate passes (exit 0)" 0
+jchk "empty repo -> missing []" '.missing==[]' "$OUT"
+
+# (b) Cargo.toml + no lsp -> gate BLOCKS (exit 3); rust still named missing in the JSON
+: > "${WORK}/Cargo.toml"
+preflight --repo acme/home
+[ "${RC}" -eq 3 ] && pass "rust + no lsp -> gate BLOCKS (exit 3)" || fail "rust + no lsp -> gate BLOCKS (exit 3)" "rc=${RC}"
+jchk "blocked report still names rust missing" '.missing|index("rust")' "$OUT"
+grep -q 'BLOCKED' "${WORK}/err" && pass "block message printed to stderr" || fail "block message to stderr" "no BLOCKED line"
+
+# (c) register a WORKING rust lsp -> gate PASSES again (exit 0)
+atdd lsp register --repo acme/home --lang rust --bin /usr/bin/true >/dev/null
+preflight --repo acme/home; assert_rc "rust covered -> gate passes (exit 0)" 0
+teardown_repo
+
+# ----------------------------------------------------------------------------
 echo "== bootstrap wiring (no-LLM coordination gate) =="
 SKILLS_DIR="$(cd -- "${RECIPES_DIR}/../.." && pwd)"
-grep -q 'lsp-surface.sh' "${SKILLS_DIR}/atdd/SKILL.md" \
-  && pass "Root SKILL.md wires lsp-surface.sh" \
-  || fail "Root SKILL.md wires lsp-surface.sh" "no reference to lsp-surface.sh"
-grep -q 'lsp-surface.sh' "${SKILLS_DIR}/atdd-plan/CORE.md" \
-  && pass "Notes CORE.md wires lsp-surface.sh" \
-  || fail "Notes CORE.md wires lsp-surface.sh" "no reference to lsp-surface.sh"
+grep -q 'stack-preflight.sh' "${SKILLS_DIR}/atdd/SKILL.md" \
+  && pass "Root SKILL.md wires the mandatory LSP gate (stack-preflight.sh)" \
+  || fail "Root SKILL.md wires stack-preflight.sh" "no reference"
+grep -q 'stack-preflight.sh' "${SKILLS_DIR}/atdd-plan/CORE.md" \
+  && pass "Notes CORE.md wires the mandatory LSP gate (stack-preflight.sh)" \
+  || fail "Notes CORE.md wires stack-preflight.sh" "no reference"
+# the single-source Stack guide is referenced by every agent that touches the model
+for f in atdd/SKILL.md atdd-plan/CORE.md atdd/roles/IMPL_AGENT_ROLE.md atdd/roles/TEST_AGENT_ROLE.md; do
+  grep -q 'STACK_USAGE.md' "${SKILLS_DIR}/${f}" \
+    && pass "${f} references the Stack guide" \
+    || fail "${f} references STACK_USAGE.md" "no reference"
+done
+[ -f "${SKILLS_DIR}/STACK_USAGE.md" ] && pass "STACK_USAGE.md (canonical guide) exists" \
+  || fail "STACK_USAGE.md exists" "missing"
 
 summary

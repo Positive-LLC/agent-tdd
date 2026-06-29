@@ -39,6 +39,16 @@ Whenever this document references `${VAR}`, substitute the value from the task b
 
 ---
 
+## atdd Stack / architecture model (only if your task asks for it)
+
+You normally don't touch the architecture model. **If** a task block explicitly asks you to read or
+update the atdd **Stack** (Layers / Interfaces / Processes), **read the canonical guide first**:
+`${PLUGIN_DIR}/../STACK_USAGE.md` (one shared file all agents read). Drive nothing from memory.
+**LSP is mandatory** for symbol-precise languages — without a registered LSP, `atdd stack verify`
+reports a `#symbol` anchor as `blocked` (never a silent "verified"); the wave bootstrap provisioned it.
+
+---
+
 ## Protocol — follow this in order
 
 ### Step 1: Read the work-item

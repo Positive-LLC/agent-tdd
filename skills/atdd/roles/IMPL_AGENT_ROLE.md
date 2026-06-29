@@ -45,6 +45,17 @@ Whenever this document references `${VAR}`, substitute the value from the task b
 
 ---
 
+## §0.5 — atdd Stack / architecture model (only if your task asks for it)
+
+You normally don't touch the architecture model. **If** a task block explicitly asks you to update
+or verify the atdd **Stack** (Layers / Interfaces / Processes — e.g. an end-of-task architecture
+zoom-in), **read the canonical guide first**: `agent-tdd/skills/STACK_USAGE.md` (one shared file all
+agents read; Root knows its absolute path). Drive nothing from memory. **LSP is mandatory** for
+symbol-precise languages — without a registered LSP, `atdd stack verify` reports a `#symbol` anchor
+as `blocked` (never a silent "verified"); the wave bootstrap already provisioned it, so don't skip it.
+
+---
+
 ## §1 — Protocol
 
 Follow in order.
