@@ -267,4 +267,33 @@ else
   fi
 fi
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== stack-zoom (recipe: verify touched scope, write marker on clean) =="
+setup_repo                      # temp git repo + isolated ATDD_HOME + atdd on PATH
+SZ="$(cd -- "${RECIPES_DIR}/../.." && pwd)/atdd/recipes/stack-zoom.sh"
+PROJ=zoomproj
+atdd project create "$PROJ" --title 'zoom' >/dev/null
+atdd --project "$PROJ" repo register acme/z "$WORK" >/dev/null
+# a real file to anchor a clean layer at:
+mkdir -p "${WORK}/src"; echo 'fn main(){}' > "${WORK}/src/lib.rs"; git -C "$WORK" add -A; git -C "$WORK" commit -qm src
+atdd --project "$PROJ" layer add z/core --repo acme/z --name Core --at 'acme/z:src/lib.rs' --by llm --confidence verified >/dev/null
+MK="${WORK}/issue-1.stack-zoom-impl"
+
+# clean verify -> exit 0 + marker
+( bash "$SZ" --project "$PROJ" --layer z/core --marker "$MK" >/dev/null 2>&1 ); rc=$?
+[[ $rc -eq 0 ]] && pass "stack-zoom exits 0 on a clean verify" || fail "stack-zoom clean exit" "rc=$rc"
+[[ -f "$MK" ]] && pass "stack-zoom wrote the completion marker" || fail "marker written"
+
+# drift -> exit 3 + NO marker
+rm -f "$MK"
+atdd --project "$PROJ" layer edit z/core --at 'acme/z:src/GONE.rs' >/dev/null
+( bash "$SZ" --project "$PROJ" --layer z/core --marker "$MK" >/dev/null 2>&1 ); rc=$?
+[[ $rc -eq 3 ]] && pass "stack-zoom exits 3 (BLOCKED) on drift" || fail "stack-zoom drift exit" "rc=$rc"
+[[ ! -f "$MK" ]] && pass "stack-zoom withholds the marker on drift" || fail "marker withheld on drift"
+
+# bad args -> exit 2
+( bash "$SZ" --marker "$MK" >/dev/null 2>&1 ); rc=$?     # missing --project (and no $ATDD_PROJECT)
+[[ $rc -eq 2 ]] && pass "stack-zoom exits 2 on missing --project" || fail "stack-zoom bad-args exit" "rc=$rc"
+teardown_repo
+
 summary
