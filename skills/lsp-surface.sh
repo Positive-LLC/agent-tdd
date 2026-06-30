@@ -64,8 +64,8 @@ origin_nwo() {
     *) return 1 ;;
   esac
 }
-REGJSON="$(atdd repo list 2>/dev/null || echo '[]')"
-[[ "$REGJSON" == \[* ]] || REGJSON='[]'   # guard: must be a JSON array
+REGJSON="$(atdd repo list 2>/dev/null | jq -c '.repos // []' 2>/dev/null || echo '[]')"
+[[ "$REGJSON" == \[* ]] || REGJSON='[]'   # guard: must be a JSON array (unwrapped from {"repos":[…]})
 [[ -n "$REPO_SLUG" ]] || REPO_SLUG="$(origin_nwo || true)"
 if [[ -z "$REPO_SLUG" && -f "${SCAN_DIR}/.atdd/manifest.json" ]]; then
   REPO_SLUG="$(jq -r '.home_repo // empty' "${SCAN_DIR}/.atdd/manifest.json" 2>/dev/null || true)"
