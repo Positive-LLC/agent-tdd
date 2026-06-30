@@ -146,8 +146,8 @@ run project-resolve.sh; assert_ok "resolve: pinned erp -> exit 0"; assert_out "r
 
 # Isolation: a RootIssue created now is scoped to erp (manifest pin) and invisible in default.
 STDIN_DATA='ERP root body' run root-create.sh 'ERP Root' -; assert_ok "root-create scoped to erp"; ERP_ROOT="$OUT"
-jchk "ERP Root visible under erp" 'map(.title)|index("ERP Root")' "$(atdd --project erp issue list --repo acme/home --label atdd:root)"
-jchk "ERP Root INVISIBLE under default" '(map(.title)|index("ERP Root"))|not' "$(atdd --project default issue list --repo acme/home --label atdd:root)"
+jchk "ERP Root visible under erp" '.issues|map(.title)|index("ERP Root")' "$(atdd --project erp issue list --repo acme/home --label atdd:root)"
+jchk "ERP Root INVISIBLE under default" '(.issues|map(.title)|index("ERP Root"))|not' "$(atdd --project default issue list --repo acme/home --label atdd:root)"
 gh_clean
 teardown_repo
 
