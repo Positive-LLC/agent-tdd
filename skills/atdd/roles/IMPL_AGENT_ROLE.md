@@ -54,6 +54,10 @@ agents read; Root knows its absolute path). Drive nothing from memory. **LSP is 
 symbol-precise languages — without a registered LSP, `atdd stack verify` reports a `#symbol` anchor
 as `blocked` (never a silent "verified"); the wave bootstrap already provisioned it, so don't skip it.
 
+> **atdd-cli is ALPHA.** If a Stack verb confuses you, errors, or you wish it did something, drop a
+> one-liner (don't derail your impl task): `bash "${PLUGIN_DIR}/recipes/drop-feedback.sh" --role impl --summary "<gist>"`
+> (pipe richer detail — exact command + output — via stdin). See the 🚧 box in `STACK_USAGE.md`.
+
 ---
 
 ## §1 — Protocol

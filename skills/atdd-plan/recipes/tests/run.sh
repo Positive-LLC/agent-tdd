@@ -313,6 +313,45 @@ atdd --project "$PROJ" layer edit z/core --at 'acme/z:src/GONE.rs' >/dev/null
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
+echo "== drop-feedback (recipe: writes a stamped alpha-feedback note; never aborts) =="
+# No atdd/daemon needed — drop-feedback only writes a file. The automated bash -n loop
+# (top of this file) globs only atdd-plan/recipes, so syntax-check this one explicitly.
+DF="$(cd -- "${RECIPES_DIR}/../.." && pwd)/atdd/recipes/drop-feedback.sh"
+bash -n "$DF" && pass "syntax drop-feedback.sh" || fail "syntax drop-feedback.sh"
+
+# (a) happy path: ATDD_FEEDBACK_DIR override -> temp dir, rich body via stdin
+FBD="$(mktemp -d)"
+DFOUT="$(printf 'cmd: atdd stack verify\noutput: confusing\nexpected: clear msg\n' \
+  | ATDD_FEEDBACK_DIR="$FBD" ATDD_ROLE=impl ATDD_PROJECT='acme/x' bash "$DF" --summary 'verify error unclear' 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 ]] && pass "drop-feedback exits 0 on a normal drop" || fail "drop-feedback exit" "rc=$rc"
+DFFILE="$(ls "$FBD"/*.md 2>/dev/null | head -1)"
+[[ -n "$DFFILE" ]] && pass "drop-feedback created a .md note" || fail "no note created"
+case "$(basename "${DFFILE:-}")" in
+  acme-x__impl__*Z__*.md) pass "note filename: slug(/→-) + role + UTC + rand" ;;
+  *) fail "note filename pattern" "${DFFILE:-<none>}" ;;
+esac
+grep -q 'verify error unclear'  "${DFFILE:-/dev/null}" && pass "summary stamped"          || fail "summary missing"
+grep -q 'cmd: atdd stack verify' "${DFFILE:-/dev/null}" && pass "stdin body stamped"        || fail "body missing"
+grep -q 'acme-x'                "${DFFILE:-/dev/null}" && pass "project slug stamped"       || fail "slug missing"
+[[ "$DFOUT" == "$DFFILE" ]] && pass "prints the note path to stdout" || fail "stdout != path" "out=$DFOUT file=$DFFILE"
+rm -rf "$FBD"
+
+# (b) bad args: missing --summary -> exit 2
+( ATDD_FEEDBACK_DIR="$(mktemp -d)" bash "$DF" --role test </dev/null ) >/dev/null 2>&1; rc=$?
+[[ $rc -eq 2 ]] && pass "drop-feedback exits 2 on missing --summary" || fail "drop-feedback bad-args exit" "rc=$rc"
+
+# (c) never-abort: an uncreatable feedback dir -> graceful no-op (exit 0, no crash, no junk)
+( ATDD_FEEDBACK_DIR="/nonexistent-root-$$/x" bash "$DF" --summary 'should no-op' </dev/null ) >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && pass "drop-feedback no-ops (exit 0) when the dir can't be created" || fail "no-op exit" "rc=$rc"
+
+# (d) all four agent contracts + the shared guide wire drop-feedback.sh (mirrors the stack-zoom greps)
+grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md" && pass "TEST role wires drop-feedback"  || fail "TEST drop-feedback pointer"
+grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md" && pass "IMPL role wires drop-feedback"  || fail "IMPL drop-feedback pointer"
+grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/SKILL.md"                 && pass "Root SKILL wires drop-feedback"  || fail "Root drop-feedback pointer"
+grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd-plan/CORE.md"             && pass "Notes CORE wires drop-feedback"  || fail "Notes drop-feedback pointer"
+grep -q 'drop-feedback.sh' "${SKILLS_DIR}/STACK_USAGE.md"                && pass "STACK_USAGE documents drop-feedback" || fail "STACK_USAGE drop-feedback box"
+
+# ────────────────────────────────────────────────────────────────────────────
 echo "== stack-zoom hook (Stop-hook backstop for test/impl) =="
 HK="$(cd -- "${RECIPES_DIR}/../../.." && pwd)/hooks/stack-zoom-stop.sh"   # plugin root = skills/..
 HKDIR="$(mktemp -d)"; SD="${HKDIR}/status"; mkdir -p "$SD"

@@ -47,6 +47,10 @@ update the atdd **Stack** (Layers / Interfaces / Processes), **read the canonica
 **LSP is mandatory** for symbol-precise languages — without a registered LSP, `atdd stack verify`
 reports a `#symbol` anchor as `blocked` (never a silent "verified"); the wave bootstrap provisioned it.
 
+> **atdd-cli is ALPHA.** If a Stack verb confuses you, errors, or you wish it did something, drop a
+> one-liner (don't derail your test task): `bash "${PLUGIN_DIR}/recipes/drop-feedback.sh" --role test --summary "<gist>"`
+> (pipe richer detail — exact command + output — via stdin). See the 🚧 box in `STACK_USAGE.md`.
+
 ---
 
 ## Protocol — follow this in order

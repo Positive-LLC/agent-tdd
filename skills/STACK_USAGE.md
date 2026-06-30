@@ -1,11 +1,26 @@
 <!-- CANONICAL agent-facing copy. Mirrors atdd-cli/STACK_USAGE.md (the tool repo);
      keep the two in sync. All four Agent-TDD agents read THIS file (one source,
      many references) via ${CLAUDE_SKILL_DIR}/../STACK_USAGE.md — never paste it. -->
-<!-- STACK-USAGE-SYNC: v2  (shared drift marker — bump in BOTH files when either's
+<!-- STACK-USAGE-SYNC: v3  (shared drift marker — bump in BOTH files when either's
      SUBSTANCE changes; atdd-cli/tests/stack-usage-sync.sh fails until they match. The
      two docs are NOT byte-identical by design, so this marker — not a diff — is the gate.) -->
 
 # atdd Stack — build & maintain a verified architecture model
+
+> ## 🚧 atdd-cli is ALPHA — capture friction as you go
+>
+> The `atdd` tool is **early alpha**: rough edges, confusing output, and outright bugs are
+> expected. When a Stack verb confuses you, errors out, behaves unexpectedly, or makes you
+> wish it did something — **drop a quick note** (don't push through silently and lose it):
+>
+> ```bash
+> # Same path prefix you use for stack-zoom.sh: ${PLUGIN_DIR}/recipes (Test/Impl) or
+> # ${CLAUDE_SKILL_DIR}/../atdd/recipes (Root/Notes). Add --role test|impl|root|notes.
+> printf 'exact command + output, and what you expected\n' \
+>   | bash "<recipes>/drop-feedback.sh" --role <r> --summary "<one-line gist>"
+> ```
+>
+> This is a **side channel** — it must NOT derail your real task. One quick note, then move on.
 
 This is how an Agent-TDD agent drives atdd-cli's **Stack** engine: declare a repo's
 architecture (Layers / Interfaces / Processes / Pipelines), **verify it against the real

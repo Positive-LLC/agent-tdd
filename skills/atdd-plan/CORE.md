@@ -152,7 +152,10 @@ In order, before free conversation:
    `--repo`). The provisioning detail belongs in the NotebookIssue, not the human dialogue. Then
    load the single-source **Stack guide** for the verbs: `Read(${CLAUDE_SKILL_DIR}/../STACK_USAGE.md)`
    — `layer / interface / process / pipeline` + `stack verify / roots / zoom` are documented there
-   (one file, read by every agent; never paste its content elsewhere).
+   (one file, read by every agent; never paste its content elsewhere). **atdd-cli is ALPHA** — if a
+   Stack verb confuses you, errors, or you wish it did something, drop a one-liner (don't derail the
+   cohort): `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/drop-feedback.sh --role notes --summary "<gist>"`
+   (pipe richer detail via stdin); see the 🚧 box in `STACK_USAGE.md`.
 
 2. **Read the NotebookIssue body** (the topology index) and the comment for the active head,
    if any. Use `${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/notebook-head-get.sh` for the head comment.
