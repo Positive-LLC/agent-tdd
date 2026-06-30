@@ -49,7 +49,7 @@ verifies your claims against the code.
   is the "what happens / what flows" overlay attributed to a Layer. A **Process** = 1 trigger →
   1..n outputs; a **Pipeline** = an ordered chain of processes.
 - **Interface** = the typed boundary between an upper and a lower Layer, realized by one
-  **communication type** (`request_response | callback | persistent | brokered`); an `owner`
+  **communication type** (`request-response | callback | persistent | brokered`); an `owner`
   side publishes it.
 - Every box carries **provenance** (`by`: lsp|llm|human), **confidence** (proposed|verified), an
   optional **anchor** (a code location), and a persisted **drift** state set by `stack verify`.

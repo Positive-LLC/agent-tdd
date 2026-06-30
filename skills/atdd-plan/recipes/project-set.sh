@@ -47,7 +47,7 @@ atdd repo register "$HOME_REPO" "$REPO_ROOT" --home >/dev/null \
 log "resolving NotebookIssue (label=${NOTEBOOK_LABEL}) in ${HOME_REPO} / project ${SLUG}"
 EXISTING="$(atdd issue list --repo "$HOME_REPO" --label "$NOTEBOOK_LABEL" --state open)" \
   || die "atdd issue list failed"
-NB_REF="$(jq -r 'if length > 0 then .[0].ref else empty end' <<<"$EXISTING")"
+NB_REF="$(jq -r 'if (.issues|length) > 0 then .issues[0].ref else empty end' <<<"$EXISTING")"
 if [[ -z "$NB_REF" ]]; then
   NB_TITLE="Agent TDD — Notes Agent notebook"
   NB_BODY="**Notes Agent private notebook** for home repo \`${HOME_REPO}\` in project \`${SLUG}\` (local atdd store).
