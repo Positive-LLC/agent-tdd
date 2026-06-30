@@ -176,6 +176,8 @@ bash "${PLUGIN_DIR}/recipes/stack-zoom.sh" --project "$ATDD_PROJECT" \
 ```
 Exit 0 → marker written → proceed. Exit 3 (BLOCKED: drift, or a `#symbol` with no LSP) → fix the
 anchor / register the LSP, then re-run. **Do not finish your task until it exits 0.**
+`--layer` is **optional** — omit it to verify the whole Stack, or pass it to scope the verify to the
+one layer you touched.
 
 ## 7. Verb quick-reference
 
