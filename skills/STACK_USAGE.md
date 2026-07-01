@@ -173,6 +173,9 @@ understanding is sharpest. Two directions:
 - **Impl** (right after `record-green`, before writing `.done`): declare/update the *layer(s) /
   process(es)* you created or changed as `--by llm --confidence verified`, anchored at the real
   symbol (LSP-backed). Promote any `proposed` box the Test agent left for this contract.
+  **Pass `--worktree <worktree-path>` to `stack-zoom.sh`** so the LSP resolves `#symbol` anchors
+  against your worktree, not the main checkout — without it, symbols you just wrote (not yet merged)
+  will not resolve and the verify blocks.
 - **Root** (after `atdd integrate`, before marking the issue merged): `stack verify` the integrated
   subtree; reconcile any cross-issue interface that only became real at merge.
 - **Notes** — two touches: **(1)** just before decomposing a RootIssue, declare the *intended* shape
@@ -187,12 +190,15 @@ is bridged to the box it changed.
 **The recipe (the deterministic gate):**
 ```bash
 bash "${PLUGIN_DIR}/recipes/stack-zoom.sh" --project "$ATDD_PROJECT" \
-  --layer <touched-layer-slug> --marker "<status-dir>/issue-<N>.stack-zoom-<role>"
+  --layer <touched-layer-slug> --worktree "<worktree-path>" \
+  --marker "<status-dir>/issue-<N>.stack-zoom-<role>"
 ```
 Exit 0 → marker written → proceed. Exit 3 (BLOCKED: drift, or a `#symbol` with no LSP) → fix the
 anchor / register the LSP, then re-run. **Do not finish your task until it exits 0.**
 `--layer` is **optional** — omit it to verify the whole Stack, or pass it to scope the verify to the
-one layer you touched.
+one layer you touched. `--worktree` is **optional** and mainly for the **Impl** agent — pass your
+worktree path so unmerged `#symbol` anchors resolve; omit it (or pass empty) to verify against the
+main checkout, exactly as Root/Notes do.
 
 ## 7. Verb quick-reference
 
