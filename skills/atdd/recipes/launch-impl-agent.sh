@@ -147,12 +147,12 @@ export ATDD_ROLE=impl ATDD_ISSUE="${ISSUE_NUM}" ATDD_STATUS_DIR="${STATUS_DIR}"
 #   - claude:   `--permission-mode bypassPermissions` is valid for interactive
 #               sessions too — same no-prompt posture the headless form used
 #               (trusted local repos only).
-#   - opencode: bare TUI. Interactive permission flags are unverified —
-#               see ROADMAP Smoke-Test Risk #7.
+#   - opencode: `--dangerously-skip-permissions` is the equivalent (verified
+#               working in smoke test).
 #   - codex:    bare TUI. Interactive driving is entirely unverified —
 #               see ROADMAP Smoke-Test Risk #7.
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-  opencode
+  opencode --dangerously-skip-permissions
 elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
   codex
 else

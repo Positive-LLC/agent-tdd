@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, chmodSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, chmodSync, rmSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const SKILL_SRC = join(__dirname, "skills")
+const VERSION_FILE = join(SKILL_SRC, "VERSION")
 
 function copyDir(src, dest) {
   if (!existsSync(dest)) mkdirSync(dest, { recursive: true })
@@ -21,10 +22,27 @@ function copyDir(src, dest) {
   }
 }
 
-function ensureSkills(targetDir) {
-  if (!existsSync(join(targetDir, "atdd", "SKILL.md"))) {
-    copyDir(SKILL_SRC, targetDir)
+function removeStaleEntries(dest, src) {
+  if (!existsSync(dest)) return
+  for (const entry of readdirSync(dest, { withFileTypes: true })) {
+    const srcPath = join(src, entry.name)
+    const destPath = join(dest, entry.name)
+    if (!existsSync(srcPath)) {
+      rmSync(destPath, { recursive: true, force: true })
+    } else if (entry.isDirectory()) {
+      removeStaleEntries(destPath, srcPath)
+    }
   }
+}
+
+function ensureSkills(targetDir) {
+  const marker = join(targetDir, ".agent-tdd-version")
+  const currentVersion = existsSync(VERSION_FILE) ? readFileSync(VERSION_FILE, "utf8").trim() : "unknown"
+  const installedVersion = existsSync(marker) ? readFileSync(marker, "utf8").trim() : ""
+  if (currentVersion === installedVersion && existsSync(join(targetDir, "atdd", "SKILL.md"))) return
+  copyDir(SKILL_SRC, targetDir)
+  removeStaleEntries(targetDir, SKILL_SRC)
+  writeFileSync(marker, currentVersion)
 }
 
 // Minimal YAML-frontmatter reader for our SKILL.md files (single-line `key: value`
@@ -68,11 +86,21 @@ function discoverEntrySkills() {
 function ensureCommands(targetDir) {
   if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
 
-  for (const skill of discoverEntrySkills()) {
+  const currentSkills = discoverEntrySkills()
+  const currentNames = new Set(currentSkills.map(s => `${s.name}.md`))
+
+  for (const entry of readdirSync(targetDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue
+    if (currentNames.has(entry.name)) continue
+    const content = readFileSync(join(targetDir, entry.name), "utf8")
+    if (content.includes("Agent TDD workflow")) {
+      rmSync(join(targetDir, entry.name))
+    }
+  }
+
+  for (const skill of currentSkills) {
     const cmdFile = join(targetDir, `${skill.name}.md`)
-    if (existsSync(cmdFile)) continue
     const argHint = skill.takesArgs ? " $ARGUMENTS" : ""
-    // OpenCode descriptions are a single line; collapse any whitespace and trim.
     const description = skill.description.replace(/\s+/g, " ").trim()
     writeFileSync(cmdFile, `---
 description: ${description}

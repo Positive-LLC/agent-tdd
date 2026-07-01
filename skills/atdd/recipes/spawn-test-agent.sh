@@ -100,10 +100,12 @@ log "capturing pane to ${LOG_DIR}/tmux.pane"
 # --- launch agent CLI ---
 # claude: launch with bypassPermissions so the test agent's single push of the
 # tests branch does not stall on a project `ask` rule (e.g. `Bash(git push:*)`).
-# Mirrors launch-impl-agent.sh, which already uses this posture for impl agents
-# (trusted local repos only). opencode/codex: bare TUI, flags unverified.
+# opencode: --dangerously-skip-permissions is the equivalent (verified working).
+# codex: bare TUI, flags unverified.
 if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
 	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_STATUS_DIR='${STATUS_DIR}' claude --permission-mode bypassPermissions" Enter
+elif [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_STATUS_DIR='${STATUS_DIR}' opencode --dangerously-skip-permissions" Enter
 else
     tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ${AGENT_TDD_CLI}" Enter
 fi

@@ -95,9 +95,10 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "${LOG_DIR}/agent.timing.start" 2>/dev/null || tru
 #               project's permissions.ask for `git push` is an OPEN smoke risk
 #               (ROADMAP) — the orchestrator must watch for a Root wedged on an
 #               in-pane permission prompt.
-#   - opencode/codex: bare TUI, orchestrated launch deferred/untested.
+#   - opencode: --dangerously-skip-permissions (verified working in smoke test).
+#   - codex:    bare TUI, orchestrated launch deferred/untested.
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-  opencode
+  opencode --dangerously-skip-permissions
 elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
   codex
 else

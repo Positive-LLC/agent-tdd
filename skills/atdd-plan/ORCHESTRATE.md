@@ -85,9 +85,9 @@ Alongside CORE.md's 10 planning invariants. Non-negotiable.
 8. **Caps and ceilings are inviolable.** Respect `concurrent_root_cap` (default 3)
    and the `roots-watcher` ceiling; never busy-wait — always idle on the background
    watcher.
-9. **claude host only (v1).** Refuse (escalate) any SubIssue whose resolved
-   `AGENT_TDD_CLI` is not `claude`; the human runs those manually. (opencode/codex
-   orchestrated launch is unverified — see ROADMAP.)
+9. **codex host not yet supported.** Refuse (escalate) any SubIssue whose resolved
+   `AGENT_TDD_CLI` is `codex`; the human runs those manually. (claude and opencode
+   orchestrated launch are verified — see ROADMAP Smoke-Test Risk #5/#8f.)
 10. **State your phase in every response.** A one-line preamble, e.g.
     `[orch: RootIssue erp#207 — cohort 2/3 running — watching]`. If you cannot write
     it, you have lost the cohort — run the §7 compaction defense.
@@ -297,8 +297,8 @@ Re-read this file at the top of each iteration.
 2. **Find ready SubIssues** of `RI`: open issues carrying `atdd:sub` + `atdd:ready`
    that are native sub-issues of `RI`.
 3. **For each, up to `concurrent_root_cap`:**
-   - **Host gate:** resolve `AGENT_TDD_CLI` for the repo; if not `claude`, escalate
-     (the human runs it manually) and skip.
+   - **Host gate:** resolve `AGENT_TDD_CLI` for the repo; if `codex`, escalate
+     (the human runs it manually) and skip. (claude and opencode are supported.)
    - **Resolve the clone:** `manifest-ensure.sh --resolve-member <repo>` (exit 0 →
      path). On exit 3, ask the human for the path (an exception) and
      `--register-member <repo> <abs-path>`.
