@@ -60,7 +60,7 @@ ISSUES_JSON="$(atdd issue list \
 REFS=()
 while IFS= read -r r; do
   [[ -n "$r" ]] && REFS+=("$r")
-done < <(jq -r '.[].ref' <<<"$ISSUES_JSON")
+done < <(jq -r '.issues[].ref' <<<"$ISSUES_JSON")
 
 if [[ ${#REFS[@]} -eq 0 ]]; then
   log "warning: no work-items with labels agent-tdd:active-wave-${WAVE} + agent-tdd:root-${ROOT_ID}"
