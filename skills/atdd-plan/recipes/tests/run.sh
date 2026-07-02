@@ -313,6 +313,62 @@ atdd --project "$PROJ" layer edit z/core --at 'acme/z:src/GONE.rs' >/dev/null
 teardown_repo
 
 # ────────────────────────────────────────────────────────────────────────────
+echo "== stack-zoom --worktree passthrough (forward to stack verify; doc §6b) =="
+# Contract (issue #5): stack-zoom.sh gains --worktree <path> and forwards it to
+# `atdd stack verify` — but ONLY when non-empty; without it, behavior is unchanged.
+# We spy on `atdd` (a PATH shim that records its argv, then exits 0 = clean verify)
+# so this is hermetic and does NOT depend on the real `atdd` yet accepting
+# --worktree (that lands on the atdd-cli side). We assert on the argv the recipe
+# forwards, not on the tool's behavior.
+SZW="$(cd -- "${RECIPES_DIR}/../.." && pwd)/atdd/recipes/stack-zoom.sh"
+bash -n "$SZW" && pass "syntax stack-zoom.sh" || fail "syntax stack-zoom.sh"
+WT="$(mktemp -d)"; SPY="${WT}/bin"; mkdir -p "$SPY"; ALOG="${WT}/atdd-argv.log"
+cat > "${SPY}/atdd" <<SPY
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${ALOG}"   # record full argv for the assertions below
+exit 0                              # stack verify -> clean, so the recipe writes its marker
+SPY
+chmod +x "${SPY}/atdd"
+WT_SAVED_PATH="$PATH"; export PATH="${SPY}:${PATH}"
+
+# (a) --worktree present -> forwarded verbatim to `atdd ... stack verify`
+: > "$ALOG"; MKW="${WT}/issue-5.stack-zoom-impl"
+( bash "$SZW" --project wp --layer z/core --worktree /wt/xyz --marker "$MKW" >/dev/null 2>&1 ); rc=$?
+[[ $rc -eq 0 ]] && pass "stack-zoom exits 0 with --worktree (clean spy verify)" || fail "worktree clean exit" "rc=$rc"
+{ grep -q 'stack verify' "$ALOG" && grep -q -- '--worktree /wt/xyz' "$ALOG"; } \
+  && pass "stack-zoom forwards --worktree to stack verify" \
+  || fail "stack-zoom forwards --worktree" "argv: $(cat "$ALOG" 2>/dev/null)"
+[[ -f "$MKW" ]] && pass "stack-zoom writes the marker on clean verify (with --worktree)" || fail "marker written (worktree)"
+
+# (b) --worktree ABSENT -> the recipe never passes --worktree (behavior unchanged)
+: > "$ALOG"; MKN="${WT}/issue-5.nowt"
+( bash "$SZW" --project wp --layer z/core --marker "$MKN" >/dev/null 2>&1 ); rc=$?
+[[ $rc -eq 0 ]] && pass "stack-zoom exits 0 without --worktree (unchanged)" || fail "no-worktree exit" "rc=$rc"
+grep -q -- '--worktree' "$ALOG" \
+  && fail "must NOT pass --worktree when absent" "argv: $(cat "$ALOG" 2>/dev/null)" \
+  || pass "stack-zoom omits --worktree when not given (behavior unchanged)"
+
+# (c) --worktree "" (empty) -> accepted, treated as absent, never forwarded as --worktree ""
+: > "$ALOG"; MKE="${WT}/issue-5.emptywt"
+( bash "$SZW" --project wp --layer z/core --worktree "" --marker "$MKE" >/dev/null 2>&1 ); rc=$?
+[[ $rc -eq 0 ]] && pass "stack-zoom accepts an empty --worktree (exits 0)" || fail "empty-worktree exit" "rc=$rc"
+grep -q -- '--worktree' "$ALOG" \
+  && fail "must NOT forward an empty --worktree" "argv: $(cat "$ALOG" 2>/dev/null)" \
+  || pass "stack-zoom omits --worktree when empty (no --worktree \"\")"
+
+export PATH="$WT_SAVED_PATH"; rm -rf "$WT"
+
+# doc §6b: the Impl guidance + the recipe example must document --worktree
+SKILLS_DIR="$(cd -- "${RECIPES_DIR}/../.." && pwd)"
+SUW="${SKILLS_DIR}/STACK_USAGE.md"
+grep -q -- '--worktree' "$SUW" \
+  && pass "STACK_USAGE.md §6b documents --worktree" \
+  || fail "STACK_USAGE.md documents --worktree" "no --worktree in the guide"
+grep -A2 'recipes/stack-zoom.sh' "$SUW" | grep -q -- '--worktree' \
+  && pass "STACK_USAGE.md recipe example includes --worktree" \
+  || fail "STACK_USAGE.md recipe example includes --worktree" "the stack-zoom.sh invocation example has no --worktree"
+
+# ────────────────────────────────────────────────────────────────────────────
 echo "== drop-feedback (recipe: writes a stamped alpha-feedback note; never aborts) =="
 # No atdd/daemon needed — drop-feedback only writes a file. The automated bash -n loop
 # (top of this file) globs only atdd-plan/recipes, so syntax-check this one explicitly.
