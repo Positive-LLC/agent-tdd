@@ -13,10 +13,13 @@
 # thoroughness is the markdown contract's job (STACK_USAGE.md).
 #
 # Usage:
-#   stack-zoom.sh [--project <slug>] --marker <file> [--layer <layer-slug>]
-#     --project  atdd project slug (defaults to $ATDD_PROJECT; required either way)
-#     --marker   absolute path of the completion marker to write on a clean verify
-#     --layer    restrict `stack verify` to this layer's subtree (default: all)
+#   stack-zoom.sh [--project <slug>] --marker <file> [--layer <layer-slug>] [--worktree <path>]
+#     --project   atdd project slug (defaults to $ATDD_PROJECT; required either way)
+#     --marker    absolute path of the completion marker to write on a clean verify
+#     --layer     restrict `stack verify` to this layer's subtree (default: all)
+#     --worktree  resolve #symbol anchors against this worktree instead of the main
+#                 checkout (forwarded to `atdd stack verify`; omit for main-checkout
+#                 behavior — an empty value is treated as absent)
 #
 # stdout: the `atdd stack verify` JSON (kept for the caller/log).
 # exit:   0 = verify clean, marker written · 3 = BLOCKED (drift/blocked; no marker)
@@ -26,13 +29,14 @@ set -uo pipefail
 log() { printf '[stack-zoom] %s\n' "$*" >&2; }
 die() { printf '[stack-zoom] ERROR: %s\n' "$*" >&2; exit 2; }
 
-PROJECT=""; MARKER=""; LAYER=""
+PROJECT=""; MARKER=""; LAYER=""; WORKTREE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project) PROJECT="${2:-}"; shift 2 ;;
-    --marker)  MARKER="${2:-}";  shift 2 ;;
-    --layer)   LAYER="${2:-}";   shift 2 ;;
-    *) die "unknown arg: $1 (usage: stack-zoom.sh [--project <slug>] --marker <file> [--layer <slug>])" ;;
+    --project)  PROJECT="${2:-}";  shift 2 ;;
+    --marker)   MARKER="${2:-}";   shift 2 ;;
+    --layer)    LAYER="${2:-}";    shift 2 ;;
+    --worktree) WORKTREE="${2:-}"; shift 2 ;;
+    *) die "unknown arg: $1 (usage: stack-zoom.sh [--project <slug>] --marker <file> [--layer <slug>] [--worktree <path>])" ;;
   esac
 done
 [[ -n "$PROJECT" ]] || PROJECT="${ATDD_PROJECT:-}"
@@ -40,11 +44,10 @@ done
 [[ -n "$MARKER"  ]] || die "--marker <file> is required"
 command -v atdd >/dev/null 2>&1 || die "atdd not found on PATH (ensure-atdd.sh runs at bootstrap)"
 
-if [[ -n "$LAYER" ]]; then
-  OUT="$(atdd --project "$PROJECT" stack verify --layer "$LAYER")"; rc=$?
-else
-  OUT="$(atdd --project "$PROJECT" stack verify)"; rc=$?
-fi
+VERIFY_ARGS=(--project "$PROJECT" stack verify)
+[[ -n "$LAYER"    ]] && VERIFY_ARGS+=(--layer "$LAYER")
+[[ -n "$WORKTREE" ]] && VERIFY_ARGS+=(--worktree "$WORKTREE")   # forward only when non-empty
+OUT="$(atdd "${VERIFY_ARGS[@]}")"; rc=$?
 printf '%s\n' "$OUT"
 
 if [[ $rc -ne 0 ]]; then
