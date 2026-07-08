@@ -322,11 +322,17 @@ Re-read this file at the top of each iteration.
      `spawn-root.sh` writes the registry entry **before** the side-effect, launches
      the Root through `launch-root.sh`, and pastes the short bootstrap.
 4. **Wait — idle.** Issue the watcher once, in the background (zero turns/tokens):
+
+   **Claude Code:** one Bash call with `run_in_background=true`:
    ```bash
    bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
      .atdd/<notes-id>/cohort-<RI#>/cohort.json
    ```
-   (one Bash call with `run_in_background=true`.)
+
+   **OpenCode:** use the `bash_bg` tool:
+   ```
+   bash_bg(command="bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh .atdd/<notes-id>/cohort-<RI#>/cohort.json", timeoutSec=3660)
+   ```
 5. **Dispatch on the `EVENT=` line** (§4).
 6. **Advance** only when the RootIssue is joined: every SubIssue merged + closed.
    Close `RI` per CORE.md §9 (with the human, in the §6 batch), run

@@ -264,10 +264,18 @@ For each wave (Wave 1 onward):
    - Creates the tmux window in `ws-root-<id>:issue-<N>`.
    - Launches the agent CLI in that window.
    - Waits for the prompt, then `tmux send-keys` the constructed initial prompt (role markdown + per-issue task block, see §5).
-9. **Issue the background event-watcher** (one Bash call with `run_in_background=true`):
+9. **Issue the background event-watcher** — invocation depends on your host CLI:
+
+   **Claude Code:** one Bash call with `run_in_background=true`:
    ```bash
    bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh <root-id> <wave> <expected_terminal_count>
    ```
+
+   **OpenCode:** use the `bash_bg` tool (registered by the agent-tdd plugin):
+   ```
+   bash_bg(command="bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh <root-id> <wave> <expected_terminal_count>", timeoutSec=1860)
+   ```
+
    This blocks (in the background) until one of three events: Gate 1 reached, any agent pauses, **or 30-min hard ceiling hit** (no event for 30 min — the watcher detects stuck waves). When the watcher exits, you resume automatically and dispatch on the `EVENT=` line (§6.1).
 10. **Update your dashboard window name** so the human sees state at a glance:
     `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> (<count> active)'`
@@ -504,10 +512,16 @@ When a test agent aborts (`.aborted` written by the impl agent), you:
 
 Every agent writes status atomically (`.tmp` then `mv`). You wait using a **single background Bash event-watcher** that exits on either terminal-threshold or first paused agent.
 
-You issue the watcher exactly once per wave, via `Bash(run_in_background=true)`:
+You issue the watcher exactly once per wave:
 
+**Claude Code:** via `Bash(run_in_background=true)`:
 ```bash
 bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh <root-id> <wave> <expected_terminal_count>
+```
+
+**OpenCode:** via the `bash_bg` tool (equivalent to `run_in_background=true`; the plugin injects the output into your session on exit):
+```
+bash_bg(command="bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh <root-id> <wave> <expected_terminal_count>", timeoutSec=1860)
 ```
 
 The watcher:
@@ -544,7 +558,7 @@ When you resume:
   8. Surface to the human with a diagnostic table (per escalating issue: which of the four signals were red, log bundle pointers, one-line tmux pane summary) and a single recommendation per §1.5 P6. **Do not present a menu.** Default recommendations: (a) for a confirmed-dead worker PID, "mark it `.failed` manually (`touch <status-dir>/issue-${X}.failed`) and I'll resume — confirm/correct"; (b) for "self-extension exhausted, worker still alive but not terminal after 60 min," "the agent has had its full budget and is still not terminal — I recommend marking it `.failed` and inspecting the log bundle for re-spawn — confirm/correct."
   9. After the human responds, take the agreed action and re-issue the watcher.
 
-**Why this design (token cost):** `run_in_background=true` makes you idle during the wait — zero turns, zero tokens — until the watcher exits. Background Bash does NOT inherit the 10-minute foreground cap; an 11-minute sleep was verified to complete with auto-notification (smoke-tested 2026-04-26). The 30-min ceiling is the safety net for silent agent death (impl/test agent dies without writing a terminal status file) — without it, Root waits forever on a dead wave. The ceiling fires per-invocation, not cumulative, so a normal wave with one mid-wave pause is unaffected.
+**Why this design (token cost):** `run_in_background=true` (Claude Code) and `bash_bg` (OpenCode) both make you idle during the wait — zero turns, zero tokens — until the watcher exits. Claude Code's background Bash does NOT inherit the 10-minute foreground cap; an 11-minute sleep was verified to complete with auto-notification (smoke-tested 2026-04-26). OpenCode's `bash_bg` spawns a detached process and injects the output via `session.promptAsync` on exit. The 30-min ceiling is the safety net for silent agent death (impl/test agent dies without writing a terminal status file) — without it, Root waits forever on a dead wave. The ceiling fires per-invocation, not cumulative, so a normal wave with one mid-wave pause is unaffected.
 
 ### 6.2 Root → Agent: `tmux send-keys`
 
@@ -698,7 +712,7 @@ On clean termination, you:
 - [ ] Create/activate issues with correct labels
 - [ ] Write `wave-<N>/manifest.json`
 - [ ] Spawn N test agents (recipe)
-- [ ] Issue background event-watcher (one Bash, run_in_background=true)
+- [ ] Issue background event-watcher (Claude Code: `run_in_background=true`; OpenCode: `bash_bg` tool)
 - [ ] Update dashboard window name
 
 **On EVENT=terminal:**

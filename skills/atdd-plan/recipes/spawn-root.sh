@@ -171,6 +171,23 @@ exec bash '${PLUGIN_ROOT}/skills/atdd-plan/recipes/launch-root.sh' '${LOG_DIR}'
 EOF
 chmod +x "${LAUNCH_SH}"
 
+# --- ensure the plugin is loaded at the clone (opencode only) ---
+# Spawned Roots run in a different repo's clone that may not have the
+# agent-tdd plugin installed. Write/merge .opencode.json so OpenCode loads
+# the plugin (providing bash_bg, skills, env vars) at the clone.
+if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
+  OC_CFG="${REPO_PATH}/.opencode.json"
+  if [[ -f "${OC_CFG}" ]] && command -v jq >/dev/null 2>&1; then
+    PLUGIN_ARR="$(jq -r '.plugin // [] | if type == "array" then . else [] end' "${OC_CFG}" 2>/dev/null || echo '[]')"
+    if ! printf '%s' "${PLUGIN_ARR}" | jq -e "index(\"${PLUGIN_ROOT}\")" >/dev/null 2>&1; then
+      jq --arg p "${PLUGIN_ROOT}" '.plugin = ((.plugin // []) + [$p])' "${OC_CFG}" > "${OC_CFG}.tmp.$$" && mv "${OC_CFG}.tmp.$$" "${OC_CFG}"
+    fi
+  else
+    printf '{"plugin":["%s"]}\n' "${PLUGIN_ROOT}" > "${OC_CFG}"
+  fi
+  log "opencode plugin config written/merged at ${OC_CFG}"
+fi
+
 # --- launch the supervisor in the window ---
 tmux send-keys -t "${TARGET}" "bash '${LAUNCH_SH}'" Enter
 

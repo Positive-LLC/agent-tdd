@@ -107,7 +107,7 @@ What lives where:
 | `recipes/init-root.sh` | Bootstrap Root: claim id, record gh account (for the final PR only), create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch agent CLI, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + agent CLI. |
-| `recipes/wave-watcher.sh` | Background-Bash event watcher. **Issue once per wave with `run_in_background=true`.** |
+| `recipes/wave-watcher.sh` | Background event watcher. **Issue once per wave:** Claude Code uses `run_in_background=true`; OpenCode uses `bash_bg` tool. |
 | `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove child worktrees and delete merged issue branches (local+remote). |
 | `recipes/terminate-root.sh` | Termination cleanup: remove Root's worktree, delete integration branch (local+remote). Run once at §8. |
 | `recipes/notify-human.sh` | tmux rename-window + display-message + notify-send/osascript. |
