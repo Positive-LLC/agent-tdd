@@ -24,7 +24,10 @@ VERSION_FILE := skills/VERSION
 ATDD_INSTALL_DIR ?= $(HOME)/.local/bin
 DEV_ATDD         := $(abspath $(ATDD_CLI))/target/release/atdd
 
-.PHONY: help set-version show-version use-dev-atdd use-release-atdd build-dev-atdd atdd-status
+# OpenCode installed plugin path (for dev-plugin swap).
+OPENCODE_PLUGIN  := $(HOME)/.cache/opencode/packages/@positivegrid/agent-tdd@latest/node_modules/@positivegrid/agent-tdd
+
+.PHONY: help set-version show-version use-dev-atdd use-release-atdd build-dev-atdd atdd-status use-dev-plugin restore-plugin
 
 help:
 	@echo "make set-version VERSION=X.Y.Z   set the version in all 5 files (lockstep)"
@@ -33,6 +36,8 @@ help:
 	@echo "make use-release-atdd            restore the real release binary (or re-download)"
 	@echo "make build-dev-atdd              cargo build --release in the sibling atdd-cli"
 	@echo "make atdd-status                 show which atdd is active + versions"
+	@echo "make use-dev-plugin              sync repo -> installed OpenCode plugin (npm files only)"
+	@echo "make restore-plugin              print command to re-install published plugin from npm"
 
 set-version:
 	@if [ -z "$(VERSION)" ]; then
@@ -154,3 +159,34 @@ atdd-status:
 	echo "dev build      : $(DEV_ATDD)"
 	if [ -x "$(DEV_ATDD)" ]; then echo "  version      : $$("$(DEV_ATDD)" --version 2>&1)"; fi
 	echo "skills/VERSION : $$(tr -d '[:space:]' < "$(VERSION_FILE)")"
+
+# ---------------------------------------------------------------------------
+# Dev-plugin swap: sync this repo into the installed OpenCode plugin path.
+#
+# Only the files that npm publishes are synced (matching package.json "files"):
+#   index.js, skills/, .claude-plugin/, .codex-plugin/, package.json, README.md
+#
+#   make use-dev-plugin     # rsync repo -> installed plugin (npm files only)
+#   make restore-plugin     # print the command to re-install from npm
+# ---------------------------------------------------------------------------
+
+use-dev-plugin:
+	@if [ ! -d "$(OPENCODE_PLUGIN)" ]; then
+	  echo "error: installed plugin not found: $(OPENCODE_PLUGIN)" >&2
+	  echo "  install it first:  opencode install @positivegrid/agent-tdd" >&2
+	  exit 1
+	fi
+	rsync -av --delete \
+	  --include='index.js' \
+	  --include='skills/' --include='skills/**' \
+	  --include='.claude-plugin/' --include='.claude-plugin/**' \
+	  --include='.codex-plugin/' --include='.codex-plugin/**' \
+	  --include='package.json' \
+	  --include='README.md' \
+	  --exclude='*' \
+	  ./ "$(OPENCODE_PLUGIN)/"
+	@echo "synced: $(CURDIR) -> $(OPENCODE_PLUGIN)"
+
+restore-plugin:
+	@echo "Re-install the published package to restore:"
+	@echo "  opencode install @positivegrid/agent-tdd@latest"
