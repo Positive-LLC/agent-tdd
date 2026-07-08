@@ -55,6 +55,19 @@ ROOT_BRANCH="agent-tdd/${ROOT_TASK}"
 WINDOW="issue-${ISSUE_NUM}-PR"
 TARGET="${WORKSPACE_SESSION}:${WINDOW}"
 
+# --- construct the qualified issue ref (owner/repo#N) ---
+# The atdd CLI rejects a bare number (`bad ref '9' (expected owner/repo#number)`),
+# so every `atdd` verb the spawned agent runs must be given ${REF}, not the bare
+# ${ISSUE_NUM}. Derive owner/repo from origin (handles both git@host:owner/repo.git
+# and https://host/owner/repo.git); ${ISSUE_NUM} is the trailing #N.
+ORIGIN_URL="$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)"
+_slug="${ORIGIN_URL%.git}"                       # strip trailing .git if present
+_repo_name="${_slug##*/}"                         # e.g. agent-tdd
+_owner="${_slug%/*}"; _owner="${_owner##*[:/]}"   # e.g. Positive-LLC
+REPO="${_owner}/${_repo_name}"
+REF="${REPO}#${ISSUE_NUM}"
+[[ -n "${_owner}" && -n "${_repo_name}" ]] || die "could not derive owner/repo from origin URL '${ORIGIN_URL}'"
+
 # --- read gh_account from meta.json (required) ---
 META="${STATE_DIR}/meta.json"
 [[ -f "${META}" ]] || die "meta.json not found at ${META}; was init-root.sh run?"
@@ -110,7 +123,7 @@ LAUNCHER="${PLUGIN_DIR}/recipes/launch-impl-agent.sh"
 # pane's shell didn't inherit our env (tmux env propagation is unreliable
 # across servers and pre-existing sessions). The wrapper starts the CLI
 # interactively; the prompt is pasted below, not passed as an argument.
-LAUNCH_CMD="ATDD_PROJECT='${PROJECT_SLUG}' AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${LOG_DIR}' '${STATUS_DIR}'"
+LAUNCH_CMD="ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ISSUE_REF='${REF}' AGENT_TDD_CLI='${AGENT_TDD_CLI}' bash '${LAUNCHER}' '${ISSUE_NUM}' '${LOG_DIR}' '${STATUS_DIR}'"
 tmux send-keys -t "${TARGET}" -l "${LAUNCH_CMD}"
 tmux send-keys -t "${TARGET}" Enter
 
@@ -134,6 +147,7 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
   echo "## Per-Issue Task"
   echo
   echo "ISSUE_NUM=${ISSUE_NUM}"
+  echo "REF=${REF}"
   echo "ROOT_ID=${ROOT_ID}"
   echo "WAVE=${WAVE}"
   echo "STATUS_DIR=${STATUS_DIR}"

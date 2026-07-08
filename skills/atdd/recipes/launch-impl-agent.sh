@@ -138,8 +138,10 @@ date -Ins > "${LOG_DIR}/agent.timing.start"
 
 # C2: give the Stop hook (hooks/stack-zoom-stop.sh) the context to enforce the
 # end-of-task Stack zoom-in for this impl agent. Only test/impl set ATDD_ROLE,
-# so the hook no-ops in every other claude session.
-export ATDD_ROLE=impl ATDD_ISSUE="${ISSUE_NUM}" ATDD_STATUS_DIR="${STATUS_DIR}"
+# so the hook no-ops in every other claude session. ATDD_ISSUE_REF (owner/repo#N,
+# threaded in by spawn-impl-agent.sh) is re-exported so the impl agent's `atdd`
+# verbs see the qualified ref — the CLI rejects a bare number.
+export ATDD_ROLE=impl ATDD_ISSUE="${ISSUE_NUM}" ATDD_ISSUE_REF="${ATDD_ISSUE_REF:-}" ATDD_STATUS_DIR="${STATUS_DIR}"
 
 # Launch the agent CLI interactively in the foreground (never `exec` — see
 # header). The per-CLI branch now selects launch FLAGS only; the prompt

@@ -55,6 +55,19 @@ ROOT_BRANCH="agent-tdd/${ROOT_TASK}"
 WINDOW="issue-${ISSUE_NUM}"
 TARGET="${WORKSPACE_SESSION}:${WINDOW}"
 
+# --- construct the qualified issue ref (owner/repo#N) ---
+# The atdd CLI rejects a bare number (`bad ref '9' (expected owner/repo#number)`),
+# so every `atdd` verb the spawned agent runs must be given ${REF}, not the bare
+# ${ISSUE_NUM}. Derive owner/repo from origin (handles both git@host:owner/repo.git
+# and https://host/owner/repo.git); ${ISSUE_NUM} is the trailing #N.
+ORIGIN_URL="$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)"
+_slug="${ORIGIN_URL%.git}"                       # strip trailing .git if present
+_repo_name="${_slug##*/}"                         # e.g. agent-tdd
+_owner="${_slug%/*}"; _owner="${_owner##*[:/]}"   # e.g. Positive-LLC
+REPO="${_owner}/${_repo_name}"
+REF="${REPO}#${ISSUE_NUM}"
+[[ -n "${_owner}" && -n "${_repo_name}" ]] || die "could not derive owner/repo from origin URL '${ORIGIN_URL}'"
+
 # --- read gh_account from meta.json (required) ---
 META="${STATE_DIR}/meta.json"
 [[ -f "${META}" ]] || die "meta.json not found at ${META}; was init-root.sh run?"
@@ -103,9 +116,9 @@ log "capturing pane to ${LOG_DIR}/tmux.pane"
 # opencode: --dangerously-skip-permissions is the equivalent (verified working).
 # codex: bare TUI, flags unverified.
 if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
-	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_STATUS_DIR='${STATUS_DIR}' claude --permission-mode bypassPermissions" Enter
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' claude --permission-mode bypassPermissions" Enter
 elif [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_STATUS_DIR='${STATUS_DIR}' opencode --dangerously-skip-permissions" Enter
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' opencode --dangerously-skip-permissions" Enter
 else
     tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ${AGENT_TDD_CLI}" Enter
 fi
@@ -130,6 +143,7 @@ mkdir -p "$(dirname "${PROMPT_FILE}")"
   echo "## Per-Issue Task"
   echo
   echo "ISSUE_NUM=${ISSUE_NUM}"
+  echo "REF=${REF}"
   echo "ROOT_ID=${ROOT_ID}"
   echo "WAVE=${WAVE}"
   echo "STATUS_DIR=${STATUS_DIR}"

@@ -431,4 +431,18 @@ out="$(printf '{"stop_hook_active":true}' | ATDD_ROLE=impl ATDD_ISSUE=9 ATDD_STA
 { [[ $rc -eq 0 && -z "$out" ]]; } && pass "hook honors stop_hook_active (never locks out)" || fail "hook loop-guard" "rc=$rc out=$out"
 rm -rf "$HKDIR"
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== ref-qualification (issue #9: atdd calls use \${REF}, never bare \${ISSUE_NUM}) =="
+# Static grep gate over the role markdowns + spawn recipes. Self-contained
+# (needs no atdd binary/daemon), so it is delegated to its own script here and
+# recorded as issue #9's test-command. The top-of-file bash -n loop globs only
+# atdd-plan/recipes/*.sh (not this tests/ dir), so syntax-check it explicitly.
+REFQ="${THIS_DIR}/ref-qualification.sh"
+bash -n "$REFQ" && pass "syntax ref-qualification.sh" || fail "syntax ref-qualification.sh"
+if REFQ_OUT="$(bash "$REFQ" 2>&1)"; then
+  pass "ref-qualification gate is green (all atdd calls qualified)"
+else
+  fail "ref-qualification gate failed" "$(printf '%s\n' "$REFQ_OUT" | sed 's/^/         /')"
+fi
+
 summary
