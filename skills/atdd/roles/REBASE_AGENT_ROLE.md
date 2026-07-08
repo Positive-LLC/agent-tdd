@@ -23,6 +23,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 ## Inputs (provided in your per-issue task block)
 
 - `ISSUE_NUM` — the work-item (issue ref) whose impl branch needs merging (e.g. `3`)
+- `REF` — full issue ref, `owner/repo#N` (e.g. `Positive-LLC/agent-tdd#3`); pass this to every `atdd` verb — the CLI rejects a bare number
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
 - `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
@@ -123,7 +124,7 @@ mv "${STATUS_DIR}/rebase-${ISSUE_NUM}.done.tmp" "${STATUS_DIR}/rebase-${ISSUE_NU
 #### On failed (merge regression: union green-check failed after a clean merge)
 
 ```bash
-atdd comment add ${ISSUE_NUM} --body-file - <<EOF
+atdd comment add ${REF} --body-file - <<EOF
 Rebase agent: merged cleanly but the union green-check failed. Likely a merge regression — original test contract may need adjustment.
 EOF
 ```
