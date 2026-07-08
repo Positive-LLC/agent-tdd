@@ -32,6 +32,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 Your invocation prompt is constructed by concatenating this role markdown with a `## Per-Issue Task` block containing:
 
 - `ISSUE_NUM` — work-item number (issue ref)
+- `REF` — full issue ref, `owner/repo#N` (e.g. `Positive-LLC/agent-tdd#3`); pass this to every `atdd` verb — the CLI rejects a bare number
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
 - `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
@@ -67,12 +68,12 @@ Follow in order.
 ### Step 1: Read the work-item and tests
 
 ```bash
-atdd init-impl ${ISSUE_NUM}
+atdd init-impl ${REF}
 git log --oneline ${ROOT_BRANCH}..${TEST_BRANCH}    # what tests were added
 git diff ${ROOT_BRANCH}...${TEST_BRANCH}             # the actual test diff
 ```
 
-`atdd init-impl ${ISSUE_NUM}` returns your full Wave-0 context: the work-item body, the **recorded test commands** (`.testCommands[]` — the exact commands the test agent wrote the tests for), and the base branch. This is where you get the commands you must make green.
+`atdd init-impl ${REF}` returns your full Wave-0 context: the work-item body, the **recorded test commands** (`.testCommands[]` — the exact commands the test agent wrote the tests for), and the base branch. This is where you get the commands you must make green.
 
 Confirm the test files. Read each one. Understand the **assertions** — they describe the contract you must satisfy.
 
@@ -134,7 +135,7 @@ git rev-parse HEAD                    # your head SHA
 Run the recorded test commands against your impl branch via the daemon. It runs the commands recorded by the test agent (`.testCommands[]`) and records the result on the work-item:
 
 ```bash
-atdd record-green ${ISSUE_NUM} \
+atdd record-green ${REF} \
   --branch ${IMPL_BRANCH} \
   --head-sha $(git rev-parse HEAD) \
   --worktree ${WORKTREE_DIR}
@@ -196,7 +197,7 @@ Use `.failed` for any of:
 If the branch was pushed, comment on the work-item before writing the status:
 
 ```bash
-atdd comment add ${ISSUE_NUM} --body-file - <<EOF
+atdd comment add ${REF} --body-file - <<EOF
 Impl agent gave up after <N> attempts. Last attempt: <summary>. Tests: <which still red>. Green-check: <pass/fail>.
 EOF
 ```
@@ -318,11 +319,11 @@ When in doubt:
 
 ## §5 — Quick checklist
 
-- [ ] `atdd init-impl ${ISSUE_NUM}` (context + recorded test commands) and `git diff ${ROOT_BRANCH}...${TEST_BRANCH}` to read the contract.
+- [ ] `atdd init-impl ${REF}` (context + recorded test commands) and `git diff ${ROOT_BRANCH}...${TEST_BRANCH}` to read the contract.
 - [ ] First test run; apply effort heuristic on import-time errors.
 - [ ] Iterate: minimal implementation, run tests, repeat.
 - [ ] When local green: commit, push `${IMPL_BRANCH}`.
-- [ ] `atdd record-green ${ISSUE_NUM} --branch ${IMPL_BRANCH} --head-sha $(git rev-parse HEAD) --worktree ${WORKTREE_DIR}`.
+- [ ] `atdd record-green ${REF} --branch ${IMPL_BRANCH} --head-sha $(git rev-parse HEAD) --worktree ${WORKTREE_DIR}`.
 - [ ] One fix attempt if the green-check failed; else accept gave-up.
 - [ ] Atomic write of terminal status: `.done` | `.failed` | `.aborted`.
 - [ ] Then exit your session (`/exit`). The supervisor wrapper handles window cleanup.

@@ -26,6 +26,7 @@ This document is your complete protocol. You have no other skills loaded. You co
 Root constructs your initial prompt by concatenating this role markdown with a `## Per-Issue Task` block that fills in:
 
 - `ISSUE_NUM` — work-item number (issue ref, e.g. `3`)
+- `REF` — full issue ref, `owner/repo#N` (e.g. `Positive-LLC/agent-tdd#3`); pass this to every `atdd` verb — the CLI rejects a bare number
 - `ROOT_ID` — e.g. `root-1`
 - `WAVE` — e.g. `1`
 - `STATUS_DIR` — absolute path of `.atdd/<root-id>/wave-<N>/status/`
@@ -58,7 +59,7 @@ reports a `#symbol` anchor as `blocked` (never a silent "verified"); the wave bo
 ### Step 1: Read the work-item
 
 ```bash
-atdd issue view ${ISSUE_NUM}
+atdd issue view ${REF}
 ```
 
 Confirm the structured fields (Subject Under Test, Behavior, Type, Provenance). If the body is missing required sections or is malformed, **pause** (see §3) — do not guess.
@@ -108,14 +109,14 @@ Capture the commit SHA: `git rev-parse HEAD`.
 After pushing `${TEST_BRANCH}`, record the exact command(s) that run the tests you just wrote. The Impl Agent reads these (via `atdd init-impl`) and the daemon re-runs them during the green-check — so they must be the precise commands that exercise your tests:
 
 ```bash
-atdd test-issue done ${ISSUE_NUM} \
+atdd test-issue done ${REF} \
   --test-command '<command that runs these tests>' \
   [--test-command '<a second command, if your tests need more than one>']
 ```
 
 Supply one `--test-command` per command (e.g. `npx vitest run path/to/foo.test.ts`, `pytest tests/test_foo.py`). You no longer edit the work-item body for a branch — the branch and head SHA are recorded later by the Impl Agent's green-check.
 
-If a `## Needs Clarification` section was present and Root resolved it, remove that section now via `atdd issue edit ${ISSUE_NUM} --title <title> --body-file -` (feeding the cleaned body). Do not touch any other section.
+If a `## Needs Clarification` section was present and Root resolved it, remove that section now via `atdd issue edit ${REF} --title <title> --body-file -` (feeding the cleaned body). Do not touch any other section.
 
 ### Step 6.5: End-of-task Stack zoom-in (mandatory — before Step 7)
 
@@ -246,14 +247,14 @@ You write `.aborted` only as a last resort — typically the impl agent is the o
 
 ## §6 — Quick checklist
 
-- [ ] `atdd issue view ${ISSUE_NUM}` — read body, confirm structure.
+- [ ] `atdd issue view ${REF}` — read body, confirm structure.
 - [ ] If `## Needs Clarification` present → pause.
 - [ ] Detect test framework from project files.
 - [ ] Read existing tests in the same module for conventions.
 - [ ] Write red tests covering the work-item's Behavior.
 - [ ] Run tests; confirm they fail (red).
 - [ ] `git add && git commit && git push -u origin ${TEST_BRANCH}`.
-- [ ] `atdd test-issue done ${ISSUE_NUM} --test-command '...'` to record the test command(s).
+- [ ] `atdd test-issue done ${REF} --test-command '...'` to record the test command(s).
 - [ ] Remove `## Needs Clarification` if Root resolved it.
 - [ ] `bash ${PLUGIN_DIR}/recipes/spawn-impl-agent.sh ...` (with all args).
 - [ ] Self-close.
