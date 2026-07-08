@@ -30,7 +30,44 @@ permissions:
   contents: write
 
 jobs:
+  npm-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version package.json)"
+          if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
+          echo "version=$version"       >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          PRERELEASE: ${{ steps.ver.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if npm view "@positivegrid/agent-tdd@${VERSION}" version 2>/dev/null; then
+            echo "Version ${VERSION} already published on npm — skipping."
+            exit 0
+          fi
+          if [[ "$PRERELEASE" == "true" ]]; then
+            npm publish --tag next
+          else
+            npm publish
+          fi
+
   release:
+    needs: npm-publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
