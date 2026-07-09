@@ -438,3 +438,25 @@ The Core above is shared. Each entry skill injects a **lens** — what "Input/Ou
 
 Deferred. To be defined in a later iteration of the entry skills. The Core is built without
 depending on its shape.
+
+---
+
+## §11 Reporting ATDD Issues
+
+ATDD is in early alpha. If you encounter bugs, confusing behavior, repeated errors, or see a better design while planning or orchestrating, report it. This is a side channel — never let it interrupt your real task.
+
+```bash
+${PLUGIN_DIR}/skills/atdd/recipes/report-feedback.sh \
+  --summary "one-line description of the issue" \
+  --role notes
+```
+
+For richer context, pipe detail to stdin:
+
+```bash
+printf 'what happened:\n...\nwhat I expected:\n...' | \
+  ${PLUGIN_DIR}/skills/atdd/recipes/report-feedback.sh \
+    --summary "short gist" --role notes
+```
+
+The script checks for existing similar issues and either creates a new one or adds a comment. It uses `--project atdd` internally so the working project is not affected.

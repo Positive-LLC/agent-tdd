@@ -369,43 +369,27 @@ grep -A2 'recipes/stack-zoom.sh' "$SUW" | grep -q -- '--worktree' \
   || fail "STACK_USAGE.md recipe example includes --worktree" "the stack-zoom.sh invocation example has no --worktree"
 
 # ────────────────────────────────────────────────────────────────────────────
-echo "== drop-feedback (recipe: writes a stamped alpha-feedback note; never aborts) =="
-# No atdd/daemon needed — drop-feedback only writes a file. The automated bash -n loop
-# (top of this file) globs only atdd-plan/recipes, so syntax-check this one explicitly.
-DF="$(cd -- "${RECIPES_DIR}/../.." && pwd)/atdd/recipes/drop-feedback.sh"
-bash -n "$DF" && pass "syntax drop-feedback.sh" || fail "syntax drop-feedback.sh"
+echo "== report-feedback (recipe: upserts agent feedback issues; never aborts) =="
+# The automated bash -n loop (top of this file) globs only atdd-plan/recipes,
+# so syntax-check this one explicitly (it lives under atdd/recipes/).
+RF="$(cd -- "${RECIPES_DIR}/../.." && pwd)/atdd/recipes/report-feedback.sh"
+bash -n "$RF" && pass "syntax report-feedback.sh" || fail "syntax report-feedback.sh"
 
-# (a) happy path: ATDD_FEEDBACK_DIR override -> temp dir, rich body via stdin
-FBD="$(mktemp -d)"
-DFOUT="$(printf 'cmd: atdd stack verify\noutput: confusing\nexpected: clear msg\n' \
-  | ATDD_FEEDBACK_DIR="$FBD" ATDD_ROLE=impl ATDD_PROJECT='acme/x' bash "$DF" --summary 'verify error unclear' 2>/dev/null)"; rc=$?
-[[ $rc -eq 0 ]] && pass "drop-feedback exits 0 on a normal drop" || fail "drop-feedback exit" "rc=$rc"
-DFFILE="$(ls "$FBD"/*.md 2>/dev/null | head -1)"
-[[ -n "$DFFILE" ]] && pass "drop-feedback created a .md note" || fail "no note created"
-case "$(basename "${DFFILE:-}")" in
-  acme-x__impl__*Z__*.md) pass "note filename: slug(/→-) + role + UTC + rand" ;;
-  *) fail "note filename pattern" "${DFFILE:-<none>}" ;;
-esac
-grep -q 'verify error unclear'  "${DFFILE:-/dev/null}" && pass "summary stamped"          || fail "summary missing"
-grep -q 'cmd: atdd stack verify' "${DFFILE:-/dev/null}" && pass "stdin body stamped"        || fail "body missing"
-grep -q 'acme-x'                "${DFFILE:-/dev/null}" && pass "project slug stamped"       || fail "slug missing"
-[[ "$DFOUT" == "$DFFILE" ]] && pass "prints the note path to stdout" || fail "stdout != path" "out=$DFOUT file=$DFFILE"
-rm -rf "$FBD"
+# (a) bad args: missing --summary -> exit 2
+( bash "$RF" --role test </dev/null ) >/dev/null 2>&1; rc=$?
+[[ $rc -eq 2 ]] && pass "report-feedback exits 2 on missing --summary" || fail "report-feedback bad-args exit" "rc=$rc"
 
-# (b) bad args: missing --summary -> exit 2
-( ATDD_FEEDBACK_DIR="$(mktemp -d)" bash "$DF" --role test </dev/null ) >/dev/null 2>&1; rc=$?
-[[ $rc -eq 2 ]] && pass "drop-feedback exits 2 on missing --summary" || fail "drop-feedback bad-args exit" "rc=$rc"
+# (b) all agent contracts + the shared guide wire report-feedback.sh
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md"  && pass "TEST role wires report-feedback"   || fail "TEST report-feedback pointer"
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md"  && pass "IMPL role wires report-feedback"   || fail "IMPL report-feedback pointer"
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/atdd/roles/REBASE_AGENT_ROLE.md" && pass "REBASE role wires report-feedback" || fail "REBASE report-feedback pointer"
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/atdd/PROTOCOL.md"               && pass "Root PROTOCOL wires report-feedback" || fail "Root report-feedback pointer"
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/atdd-plan/CORE.md"              && pass "Notes CORE wires report-feedback"  || fail "Notes report-feedback pointer"
+grep -q 'report-feedback.sh' "${SKILLS_DIR}/STACK_USAGE.md"                 && pass "STACK_USAGE documents report-feedback" || fail "STACK_USAGE report-feedback box"
 
-# (c) never-abort: an uncreatable feedback dir -> graceful no-op (exit 0, no crash, no junk)
-( ATDD_FEEDBACK_DIR="/nonexistent-root-$$/x" bash "$DF" --summary 'should no-op' </dev/null ) >/dev/null 2>&1; rc=$?
-[[ $rc -eq 0 ]] && pass "drop-feedback no-ops (exit 0) when the dir can't be created" || fail "no-op exit" "rc=$rc"
-
-# (d) all four agent contracts + the shared guide wire drop-feedback.sh (mirrors the stack-zoom greps)
-grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/roles/TEST_AGENT_ROLE.md" && pass "TEST role wires drop-feedback"  || fail "TEST drop-feedback pointer"
-grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/roles/IMPL_AGENT_ROLE.md" && pass "IMPL role wires drop-feedback"  || fail "IMPL drop-feedback pointer"
-grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd/SKILL.md"                 && pass "Root SKILL wires drop-feedback"  || fail "Root drop-feedback pointer"
-grep -q 'drop-feedback.sh' "${SKILLS_DIR}/atdd-plan/CORE.md"             && pass "Notes CORE wires drop-feedback"  || fail "Notes drop-feedback pointer"
-grep -q 'drop-feedback.sh' "${SKILLS_DIR}/STACK_USAGE.md"                && pass "STACK_USAGE documents drop-feedback" || fail "STACK_USAGE drop-feedback box"
+# (c) no stale references to the removed drop-feedback.sh
+! grep -rq 'drop-feedback\.sh' "${SKILLS_DIR}/atdd/roles/" "${SKILLS_DIR}/atdd/PROTOCOL.md" "${SKILLS_DIR}/atdd-plan/CORE.md" "${SKILLS_DIR}/STACK_USAGE.md" \
+  && pass "no stale drop-feedback.sh references" || fail "stale drop-feedback.sh references remain"
 
 # ────────────────────────────────────────────────────────────────────────────
 echo "== stack-zoom hook (Stop-hook backstop for test/impl) =="

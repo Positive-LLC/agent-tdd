@@ -17,7 +17,7 @@
 > # Same path prefix you use for stack-zoom.sh: ${PLUGIN_DIR}/recipes (Test/Impl) or
 > # ${CLAUDE_SKILL_DIR}/../atdd/recipes (Root/Notes). Add --role test|impl|root|notes.
 > printf 'exact command + output, and what you expected\n' \
->   | bash "<recipes>/drop-feedback.sh" --role <r> --summary "<one-line gist>"
+>   | bash "<recipes>/report-feedback.sh" --role <r> --summary "<one-line gist>"
 > ```
 >
 > This is a **side channel** — it must NOT derail your real task. One quick note, then move on.

@@ -328,4 +328,26 @@ When in doubt:
 - [ ] Atomic write of terminal status: `.done` | `.failed` | `.aborted`.
 - [ ] Then exit your session (`/exit`). The supervisor wrapper handles window cleanup.
 
+## Reporting ATDD Issues
+
+ATDD is in early alpha. If you encounter bugs, confusing behavior, repeated errors, or see a better design, report it. This is a side channel — never let it interrupt your real task.
+
+```bash
+${PLUGIN_DIR}/skills/atdd/recipes/report-feedback.sh \
+  --summary "one-line description of the issue" \
+  --role impl
+```
+
+For richer context, pipe detail to stdin:
+
+```bash
+printf 'what happened:\n...\nwhat I expected:\n...' | \
+  ${PLUGIN_DIR}/skills/atdd/recipes/report-feedback.sh \
+    --summary "short gist" --role impl
+```
+
+The script checks for existing similar issues and either creates a new one or adds a comment. It uses `--project atdd` internally so your working project is not affected.
+
+---
+
 End of role.
