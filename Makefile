@@ -27,7 +27,7 @@ DEV_ATDD         := $(abspath $(ATDD_CLI))/target/release/atdd
 # OpenCode installed plugin path (for dev-plugin swap).
 OPENCODE_PLUGIN  := $(HOME)/.cache/opencode/packages/@positivegrid/agent-tdd@latest/node_modules/@positivegrid/agent-tdd
 
-.PHONY: help set-version show-version use-dev-atdd use-release-atdd build-dev-atdd atdd-status use-dev-plugin restore-plugin
+.PHONY: help set-version show-version use-dev-atdd use-release-atdd build-dev-atdd atdd-status use-dev-plugin restore-plugin sync-deepcode-skills
 
 help:
 	@echo "make set-version VERSION=X.Y.Z   set the version in all 5 files (lockstep)"
@@ -38,6 +38,7 @@ help:
 	@echo "make atdd-status                 show which atdd is active + versions"
 	@echo "make use-dev-plugin              sync repo -> installed OpenCode plugin (npm files only)"
 	@echo "make restore-plugin              print command to re-install published plugin from npm"
+	@echo "make sync-deepcode-skills        symlink all skills into ~/.agents/skills/ for Deep Code discovery"
 
 set-version:
 	@if [ -z "$(VERSION)" ]; then
@@ -190,3 +191,45 @@ use-dev-plugin:
 restore-plugin:
 	@echo "Re-install the published package to restore:"
 	@echo "  opencode install @positivegrid/agent-tdd@latest"
+
+# ---------------------------------------------------------------------------
+# Deep Code skill sync: symlink every skill directory into ~/.agents/skills/
+# so Deep Code discovers them. Idempotent — re-running fixes broken links,
+# skips existing ones that are already correct.
+#
+#   make sync-deepcode-skills
+#
+# After this, configure Deep Code env vars in ~/.deepcode/settings.json:
+#   "CLAUDE_SKILL_DIR": "<repo-root>/skills/atdd",
+#   "AGENT_TDD_CLI":    "deepcode"
+# ---------------------------------------------------------------------------
+
+DEEPCODE_SKILLS_DIR := $(HOME)/.agents/skills
+SKILL_DIRS := atdd atdd-compact atdd-feature atdd-fix atdd-from-issue atdd-plan
+
+sync-deepcode-skills:
+	@mkdir -p "$(DEEPCODE_SKILLS_DIR)"
+	@added=0; skipped=0; fixed=0
+	@for d in $(SKILL_DIRS); do \
+	  src="$(CURDIR)/skills/$$d"; \
+	  dst="$(DEEPCODE_SKILLS_DIR)/$$d"; \
+	  if [ -L "$$dst" ]; then \
+	    cur="$$(readlink "$$dst")"; \
+	    if [ "$$cur" = "$$src" ]; then \
+	      skipped=$$((skipped + 1)); \
+	      printf '  skip  %s -> %s (already correct)\n' "$$dst" "$$src"; \
+	    else \
+	      rm -f "$$dst"; \
+	      ln -s "$$src" "$$dst"; \
+	      fixed=$$((fixed + 1)); \
+	      printf '  fixed %s -> %s (was %s)\n' "$$dst" "$$src" "$$cur"; \
+	    fi; \
+	  elif [ -e "$$dst" ]; then \
+	    printf '  WARN  %s exists but is not a symlink — skipping (remove it first)\n' "$$dst"; \
+	  else \
+	    ln -s "$$src" "$$dst"; \
+	    added=$$((added + 1)); \
+	    printf '  add   %s -> %s\n' "$$dst" "$$src"; \
+	  fi; \
+	done; \
+	printf '\n%s added, %s skipped, %s fixed\n' "$$added" "$$skipped" "$$fixed"
