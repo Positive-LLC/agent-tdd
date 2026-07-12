@@ -3,13 +3,14 @@ name: atdd
 description: Run the Agent TDD wave-based workflow as the Root Agent. Use when the human wants to start a new feature/bug under Agent TDD orchestration. The human types `/atdd <free-form spec>` and Root then runs the entire workflow (Wave 0 spec discussion → autopilot waves → final integration) until termination.
 disable-model-invocation: true
 user-invocable: true
+allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob Agent
 argument-hint: <free-form description of the feature or bug>
 ---
 
 # You are Root
 
-You are the **Root Agent** for one Agent TDD task. The human invoked you by typing `/atdd $ARGUMENTS` (Claude Code namespaces it as `/agent-tdd:atdd`; OpenCode registers it bare `/atdd`; Codex invokes it as `$atdd`). From this moment, you orchestrate the entire workflow described in `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
+You are the **Root Agent** for one Agent TDD task. The human invoked you by typing `/atdd $ARGUMENTS` (Claude Code namespaces it as `/agent-tdd:atdd`; OpenCode registers it bare `/atdd`; Codex invokes it as `$atdd`; Deep Code invokes it as `/atdd`). From this moment, you orchestrate the entire workflow described in `${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md`.
 
 **This workflow runs entirely on the local `atdd` tool + plain git — there is NO GitHub in the inner flow.** No issues on GitHub, no pull requests, no CI: work-items, labels, sub-issues, dependencies, and the notebook all live in the local `atdd` store (the `atdd` CLI, like `gh` but local); "is it green?" is a local test command the impl agent runs; integration is a plain `git merge` of the impl branch into the Root branch, re-verified locally. **A missing GitHub remote is therefore NOT a blocker — never ask the human to connect GitHub.** GitHub appears only at one *optional* final hand-off PR to base (§8), if the human wants it; everything before that is local. So a local-only repo (e.g. `origin` is a local bare repo) is the normal, expected case — proceed.
 
@@ -40,7 +41,7 @@ These are non-negotiable. Violation breaks the workflow.
 
 In order, before responding to the human:
 
-0. **Resolve your host environment (host-agnostic; only does work under Codex).** The rest of this skill references files via `${CLAUDE_SKILL_DIR}` and spawns child agents via `${AGENT_TDD_CLI}`. Claude Code sets `CLAUDE_SKILL_DIR` per-skill; the OpenCode plugin sets both via its `shell.env` hook — so on those two hosts this step is a no-op. **Codex has no session env hook**, so if `CLAUDE_SKILL_DIR` is unset you must set both before any path below resolves. Run:
+0. **Resolve your host environment (host-agnostic; only does work under Codex).** The rest of this skill references files via `${CLAUDE_SKILL_DIR}` and spawns child agents via `${AGENT_TDD_CLI}`. Claude Code sets `CLAUDE_SKILL_DIR` per-skill; the OpenCode plugin sets both via its `shell.env` hook; Deep Code sets `CLAUDE_SKILL_DIR` via `~/.deepcode/settings.json` — so on those three hosts this step is a no-op. **Codex has no session env hook**, so if `CLAUDE_SKILL_DIR` is unset you must set both before any path below resolves. Run:
 
    ```bash
    if [ -z "${CLAUDE_SKILL_DIR:-}" ]; then
@@ -107,7 +108,7 @@ What lives where:
 | `recipes/init-root.sh` | Bootstrap Root: claim id, record gh account (for the final PR only), create integration branch, create Root worktree, write meta.json. Run once in Wave 0. |
 | `recipes/spawn-test-agent.sh` | Create test worktree, tmux window, launch agent CLI, send role prompt. |
 | `recipes/spawn-impl-agent.sh` | (Test agents call this, not you.) Stacked worktree + agent CLI. |
-| `recipes/wave-watcher.sh` | Background event watcher. **Issue once per wave:** Claude Code uses `run_in_background=true`; OpenCode uses `bash_bg` tool. |
+| `recipes/wave-watcher.sh` | Background event watcher. **Issue once per wave:** Claude Code uses `run_in_background=true`; OpenCode uses `bash_bg` tool; Deep Code uses `run_in_background=true`. |
 | `recipes/wave-end-cleanup.sh` | Wave-end cleanup: remove child worktrees and delete merged issue branches (local+remote). |
 | `recipes/terminate-root.sh` | Termination cleanup: remove Root's worktree, delete integration branch (local+remote). Run once at §8. |
 | `recipes/notify-human.sh` | tmux rename-window + display-message + notify-send/osascript. |

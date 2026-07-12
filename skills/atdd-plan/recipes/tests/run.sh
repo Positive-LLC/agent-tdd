@@ -429,4 +429,14 @@ else
   fail "ref-qualification gate failed" "$(printf '%s\n' "$REFQ_OUT" | sed 's/^/         /')"
 fi
 
+# ────────────────────────────────────────────────────────────────────────────
+echo "== deepcode-support (CLI platform: deepcode launch branches + docs) =="
+DCS="${THIS_DIR}/deepcode-support.sh"
+bash -n "$DCS" && pass "syntax deepcode-support.sh" || fail "syntax deepcode-support.sh"
+if DCS_OUT="$(bash "$DCS" 2>&1)"; then
+  pass "deepcode-support gate is green (all deepcode branches + docs present)"
+else
+  fail "deepcode-support gate failed" "$(printf '%s\n' "$DCS_OUT" | sed 's/^/         /')"
+fi
+
 summary

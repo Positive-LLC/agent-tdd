@@ -4,9 +4,9 @@
 #
 # Usage:  spawn-resume-window.sh <root-id>
 #
-# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex). Selects the
+# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex, deepcode). Selects the
 # invocation form (`/agent-tdd:atdd resume <id>` under claude; `/atdd resume <id>`
-# under opencode; `$atdd resume <id>` under codex) and the binary launched in the
+# under opencode and deepcode; `$atdd resume <id>` under codex) and the binary launched in the
 # new pane.
 #
 # Prints the new window's stable tmux ID (e.g. @12) on stdout. All progress
@@ -114,6 +114,8 @@ if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
   SLASH="/atdd resume ${ROOT_ID}"
 elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
   SLASH="\$atdd resume ${ROOT_ID}"
+elif [[ "${AGENT_TDD_CLI}" == "deepcode" ]]; then
+  SLASH="/atdd resume ${ROOT_ID}"
 else
   SLASH="/agent-tdd:atdd resume ${ROOT_ID}"
 fi

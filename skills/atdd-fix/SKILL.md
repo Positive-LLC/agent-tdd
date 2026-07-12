@@ -3,6 +3,7 @@ name: atdd-fix
 description: Plan a bug-fix as the Notes Agent — investigate privately, produce well-specced RootIssues + per-repo SubIssues in the local atdd store, then (by default, after a single human "go") orchestrate /atdd across the ready SubIssues — or hand off manually. Use when the human types `/agent-tdd:fix <free-form bug description>`. Result-driven dialogue only; details stay in the NotebookIssue.
 disable-model-invocation: true
 user-invocable: true
+allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob
 argument-hint: <free-form bug description; what's wrong + the input/output you expect>
 ---

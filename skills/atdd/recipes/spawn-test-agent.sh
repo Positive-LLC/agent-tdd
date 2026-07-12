@@ -14,10 +14,10 @@
 #   - Pastes the constructed initial prompt (TEST_AGENT_ROLE.md + per-issue task block).
 #   - Submits the prompt with Enter.
 #
-# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex). The value
+# Environment: AGENT_TDD_CLI (default: claude; alt: opencode, codex, deepcode). The value
 # is the interactive binary launched in the window (`claude` / `opencode` /
-# `codex`), so no per-CLI branch is needed here — the prompt is pasted the same
-# way for all three.
+# `codex` / `deepcode`), so no per-CLI branch is needed here — the prompt is pasted the same
+# way for all four.
 #
 # spawn-impl-agent.sh is the parallel implementation for impl agents (same
 # launch + prompt-ready poll + paste flow, but routed through the
@@ -115,10 +115,13 @@ log "capturing pane to ${LOG_DIR}/tmux.pane"
 # tests branch does not stall on a project `ask` rule (e.g. `Bash(git push:*)`).
 # opencode: --dangerously-skip-permissions is the equivalent (verified working).
 # codex: bare TUI, flags unverified.
+# deepcode: bare TUI (permissions handled by Deep Code's own system).
 if [[ "${AGENT_TDD_CLI}" == "claude" ]]; then
 	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' claude --permission-mode bypassPermissions" Enter
 elif [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' opencode --dangerously-skip-permissions" Enter
+	tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' opencode --auto" Enter
+	elif [[ "${AGENT_TDD_CLI}" == "deepcode" ]]; then
+		tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ATDD_ROLE=test ATDD_ISSUE='${ISSUE_NUM}' ATDD_ISSUE_REF='${REF}' ATDD_STATUS_DIR='${STATUS_DIR}' deepcode" Enter
 else
     tmux send-keys -t "${TARGET}" "ATDD_PROJECT='${PROJECT_SLUG}' ${AGENT_TDD_CLI}" Enter
 fi

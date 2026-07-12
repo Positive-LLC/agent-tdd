@@ -28,7 +28,7 @@
 # Usage:  launch-root.sh <log-dir>
 #
 # Environment (set on the launch line by spawn-root.sh):
-#   AGENT_TDD_CLI            CLI binary (default: claude; alt: opencode, codex)
+#   AGENT_TDD_CLI            CLI binary (default: claude; alt: opencode, codex, deepcode)
 #   AGENT_TDD_SIGNAL_PATH    absolute path to this Root's root-signal.json
 #   AGENT_TDD_ORCHESTRATED   "1" (write-signal.sh is gated on it)
 #   CLAUDE_SKILL_DIR         used to locate write-signal.sh
@@ -95,12 +95,15 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "${LOG_DIR}/agent.timing.start" 2>/dev/null || tru
 #               project's permissions.ask for `git push` is an OPEN smoke risk
 #               (ROADMAP) — the orchestrator must watch for a Root wedged on an
 #               in-pane permission prompt.
-#   - opencode: --dangerously-skip-permissions (verified working in smoke test).
+#   - opencode: --auto (auto-approve permissions; --dangerously-skip-permissions is a hidden alias).
 #   - codex:    bare TUI, orchestrated launch deferred/untested.
+#   - deepcode: bare TUI (permissions handled by Deep Code's own system).
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-  opencode --dangerously-skip-permissions
+  opencode --auto
 elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
   codex
+elif [[ "${AGENT_TDD_CLI}" == "deepcode" ]]; then
+  deepcode
 else
   claude --permission-mode bypassPermissions
 fi

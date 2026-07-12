@@ -29,7 +29,7 @@
 # Usage:  launch-impl-agent.sh <issue-num> <log-dir> <status-dir>
 #
 # Environment:
-#   AGENT_TDD_CLI           CLI binary (default: claude; alt: opencode, codex)
+#   AGENT_TDD_CLI           CLI binary (default: claude; alt: opencode, codex, deepcode)
 #
 # Side effects under <log-dir>/:
 #   agent.exitcode       CLI exit code (informational only — NOT the
@@ -153,10 +153,13 @@ export ATDD_ROLE=impl ATDD_ISSUE="${ISSUE_NUM}" ATDD_ISSUE_REF="${ATDD_ISSUE_REF
 #               working in smoke test).
 #   - codex:    bare TUI. Interactive driving is entirely unverified —
 #               see ROADMAP Smoke-Test Risk #7.
+#   - deepcode: bare TUI (permissions handled by Deep Code's own system).
 if [[ "${AGENT_TDD_CLI}" == "opencode" ]]; then
-  opencode --dangerously-skip-permissions
+  opencode --auto
 elif [[ "${AGENT_TDD_CLI}" == "codex" ]]; then
   codex
+elif [[ "${AGENT_TDD_CLI}" == "deepcode" ]]; then
+  deepcode
 else
   claude --permission-mode bypassPermissions
 fi

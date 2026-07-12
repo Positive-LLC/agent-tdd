@@ -90,7 +90,7 @@ export const AgentTDDPlugin = async ({ directory, client }) => {
 
     "shell.env": async (_input, output) => {
       output.env.CLAUDE_SKILL_DIR = output.env.CLAUDE_SKILL_DIR || atddDir
-      output.env.AGENT_TDD_CLI = output.env.AGENT_TDD_CLI || "opencode"
+      output.env.AGENT_TDD_CLI = output.env.AGENT_TDD_CLI || "opencode"  // alt: claude, codex, deepcode
     },
 
     tool: {

@@ -3,6 +3,7 @@ name: atdd-from-issue
 description: Run /atdd against a single ready SubIssue produced by the Notes Agent. Use when the human types `/agent-tdd:atdd-from-issue <owner/repo> <issue#>` (or `<owner/repo>#<N>` in one arg). Fetches the SubIssue body + its parent RootIssue body, then delegates to /atdd with the union as Wave-0 seed — skipping freeform spec discussion since planning is already done upstream.
 disable-model-invocation: true
 user-invocable: true
+allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob Agent
 argument-hint: <owner/repo> <issue-number>   (or  <owner/repo>#<N>  as one arg)
 ---
