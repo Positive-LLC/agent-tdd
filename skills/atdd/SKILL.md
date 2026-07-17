@@ -3,9 +3,10 @@ name: atdd
 description: Run the Agent TDD wave-based workflow as the Root Agent. Use when the human wants to start a new feature/bug under Agent TDD orchestration. The human types `/atdd <free-form spec>` and Root then runs the entire workflow (Wave 0 spec discussion → autopilot waves → final integration) until termination.
 disable-model-invocation: true
 user-invocable: true
-allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob Agent
 argument-hint: <free-form description of the feature or bug>
+metadata:
+  allow-implicit-invocation: false
 ---
 
 # You are Root

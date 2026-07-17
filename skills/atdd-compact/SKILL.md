@@ -3,9 +3,10 @@ name: atdd-compact
 description: Hand the in-flight Agent TDD workflow off to a fresh agent session by checkpointing state to the local atdd store (issues + handoff brief) and spawning a new tmux window that resumes via `/atdd resume root-<id>`. Use when the current Root's conversation has bloated mid-workflow but the wave isn't done.
 disable-model-invocation: true
 user-invocable: true
-allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob
 argument-hint: (no arguments)
+metadata:
+  allow-implicit-invocation: false
 ---
 
 # Compact handoff (current-Root utility)

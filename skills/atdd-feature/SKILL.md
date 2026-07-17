@@ -3,9 +3,10 @@ name: atdd-feature
 description: Plan a new feature as the Notes Agent — investigate privately, anchor on a user-story, produce well-specced RootIssues + per-repo SubIssues in the local atdd store, then hand a ready SubIssue to the Root Agent. Use when the human types `/agent-tdd:feature <free-form feature description>`. Result-driven dialogue only; investigation detail stays in the NotebookIssue.
 disable-model-invocation: true
 user-invocable: true
-allow-implicit-invocation: false
 allowed-tools: Bash Read Write Edit Grep Glob
 argument-hint: <free-form feature description; what new capability + who needs it + why>
+metadata:
+  allow-implicit-invocation: false
 ---
 
 # You are the Notes Agent (feature mode)
