@@ -266,34 +266,24 @@ For each wave (Wave 1 onward):
    - Waits for the prompt, then `tmux send-keys` the constructed initial prompt (role markdown + per-issue task block, see §5).
 9. **Issue the background event-watcher** — cross-platform, in-house (no host-CLI-specific features):
 
-   The watcher runs as a **nohup daemon** that monitors status files. You wait with a **single foreground Bash call** that internally polls the daemon's result file — the sleep/poll cycle costs zero tokens (it runs inside the Bash process, not across agent turns). This works identically on every host CLI.
+   The watcher runs as a **background daemon** that monitors status files. You wait with `Bash(run_in_background=true)` — the runtime fork/execs the watcher, your agent goes idle (zero tokens), and resumes automatically when the watcher exits. This works on every host CLI that supports `run_in_background` (Claude Code native; DeepCode native; OpenCode via `bash_bg`).
 
-   **Step 9a — launch the daemon:**
+   **Step 9 — launch the watcher and wait (single background Bash call):**
    ```bash
    RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
    rm -f "${RESULT_FILE}"
-   nohup bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
-     <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}" \
-     > /dev/null 2>&1 &
+   bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
+     <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
    ```
+   Issue this with `run_in_background=true`. The watcher polls `<status-dir>` every 10 s and exits on the first event (terminal / paused / 30-min timeout), writing the `EVENT=` line to `${RESULT_FILE}`. When the background task completes, capture its stdout — the first line is the `EVENT=` result.
 
-   **Step 9b — wait for the result (single Bash call; 5-min budget per invocation):**
-   ```bash
-   RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
-   for i in $(seq 1 30); do
-     if [ -s "${RESULT_FILE}" ]; then cat "${RESULT_FILE}"; exit 0; fi
-     sleep 10
-   done
-   echo "NOT_READY"
-   ```
+   Three possible outcomes:
 
-   The daemon polls every 10 s and writes atomically to `${RESULT_FILE}` on the first event (terminal / paused / 30-min timeout). The wait loop checks the file every 10 s for up to 5 min per invocation. Three possible outcomes:
+   - Output starts with `EVENT=` → the watcher produced an event. Dispatch per §6.1 and delete `${RESULT_FILE}` before re-issuing.
+   - Output is empty (watcher exited without writing) → the daemon died or the file was never created. Re-issue step 9 (fresh background watcher).
+   - The watcher produces `EVENT=timeout` after its own 30-min ceiling. Process per §6.1 as usual.
 
-   - Output starts with `EVENT=` → the daemon produced an event. Dispatch per §6.1 and delete `${RESULT_FILE}` before re-issuing.
-   - Output is `NOT_READY` → the daemon is still running with no event yet. **Silently re-issue step 9b** (another 5-min budget). The daemon keeps running; re-issuing the wait is cheap (one tool call per 5 min, vs ~90 with naive polling).
-   - The daemon produces `EVENT=timeout` after its own 30-min ceiling — your wait loop picks it up on the next check. Process per §6.1 as usual.
-
-   After consuming any event (or after a human answers a pause), `rm -f "${RESULT_FILE}"` and **re-issue both steps 9a+9b** to restart the daemon with a fresh budget.
+   After consuming any event (or after a human answers a pause), `rm -f "${RESULT_FILE}"` and **re-issue step 9** with a fresh background call.
 10. **Update your dashboard window name** so the human sees state at a glance:
     `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> (<count> active)'`
     (`${ROOT_TMUX_WINDOW}` comes from `meta.json:root_tmux_window_id`; never target via `<session>:root-<id>` — see §2.1.)
@@ -525,30 +515,20 @@ When a test agent aborts (`.aborted` written by the impl agent), you:
 
 ## 6. Coordination
 
-### 6.1 Agent → Root: status files + nohup daemon event-watcher
+### 6.1 Agent → Root: status files + background daemon event-watcher
 
-Every agent writes status atomically (`.tmp` then `mv`). You wait using a **nohup daemon** (the watcher script) plus a **single foreground Bash** that internally polls the daemon's result file. This is cross-platform, in-house — no host-CLI-specific features needed.
+Every agent writes status atomically (`.tmp` then `mv`). You wait by running the watcher script with `Bash(run_in_background=true)` — the runtime manages the process lifecycle, your agent idles (zero tokens), and resumes when the watcher exits.
 
-**Launch the daemon:**
+**Launch the watcher and wait (single background Bash call):**
 ```bash
 RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
 rm -f "${RESULT_FILE}"
-nohup bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
-  <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}" \
-  > /dev/null 2>&1 &
+bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
+  <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
 ```
+Issue this with `run_in_background=true`. When the background task completes, capture its stdout — the first line is the `EVENT=` result.
 
-**Wait for the result (single Bash call; 5-min budget per invocation):**
-```bash
-RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
-for i in $(seq 1 30); do
-  if [ -s "${RESULT_FILE}" ]; then cat "${RESULT_FILE}"; exit 0; fi
-  sleep 10
-done
-echo "NOT_READY"
-```
-
-The daemon writes atomically to `${RESULT_FILE}` on the first event. The wait loop checks every 10 s for up to 5 min. If the loop prints `NOT_READY`, the daemon is still running — silently re-issue the wait (one more 5-min budget). After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue both daemon + wait.
+The watcher writes atomically to `${RESULT_FILE}` on the first event. If the output is empty (watcher exited without writing), the daemon died — re-issue the background call. After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue.
 
 The watcher:
 - Polls `<status-dir>` every 10 seconds.
