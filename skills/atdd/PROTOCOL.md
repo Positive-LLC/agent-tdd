@@ -266,24 +266,24 @@ For each wave (Wave 1 onward):
    - Waits for the prompt, then `tmux send-keys` the constructed initial prompt (role markdown + per-issue task block, see §5).
 9. **Issue the background event-watcher** — cross-platform, in-house (no host-CLI-specific features):
 
-   The watcher runs as a **background daemon** that monitors status files. You wait with `Bash(run_in_background=true)` — the runtime fork/execs the watcher, your agent goes idle (zero tokens), and resumes automatically when the watcher exits. This works on every host CLI that supports `run_in_background` (Claude Code native; DeepCode native; OpenCode via `bash_bg`).
+   The watcher runs as a **foreground blocking call** that internally polls status files. You issue ONE `Bash` call (NOT `run_in_background`) — the watcher's internal `sleep 10` is bash-internal (zero agent tokens), and your agent resumes immediately when the watcher exits with a result. This pattern works identically on every host CLI without relying on background-task notification (which breaks for autonomous agents in tmux sessions — see DeepCode root-cause analysis in #95).
 
-   **Step 9 — launch the watcher and wait (single background Bash call):**
+   **Step 9 — launch the watcher and wait (single foreground Bash call):**
    ```bash
    RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
    rm -f "${RESULT_FILE}"
    bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
      <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
    ```
-   Issue this as a **`Bash` tool call with parameter `run_in_background: true`** (NOT a plain foreground Bash call). On DeepCode: `Bash(run_in_background=true)`. On Claude Code: same. On OpenCode: use `bash_bg` tool instead. The runtime fork/execs the watcher; your agent goes idle (zero tokens) and auto-resumes when the background task exits. Capture the task's stdout — the first line is the `EVENT=` result.
+   Run this as a **plain foreground `Bash` call** — do NOT use `run_in_background`. The watcher polls `<status-dir>` every 10 s (bash-internal, zero agent tokens) and exits on the first event (terminal / paused / 30-min timeout), printing the `EVENT=` line to stdout. When the call returns, capture its stdout — the first line is the `EVENT=` result.
 
    Three possible outcomes:
 
    - Output starts with `EVENT=` → the watcher produced an event. Dispatch per §6.1 and delete `${RESULT_FILE}` before re-issuing.
-   - Output is empty (watcher exited without writing) → the daemon died or the file was never created. Re-issue step 9 (fresh background watcher).
+   - Output is empty (watcher exited without writing) → the watcher died or the file was never created. Re-issue step 9.
    - The watcher produces `EVENT=timeout` after its own 30-min ceiling. Process per §6.1 as usual.
 
-   After consuming any event (or after a human answers a pause), `rm -f "${RESULT_FILE}"` and **re-issue step 9** with a fresh background call.
+   After consuming any event (or after a human answers a pause), `rm -f "${RESULT_FILE}"` and **re-issue step 9** with a fresh foreground call.
 10. **Update your dashboard window name** so the human sees state at a glance:
     `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> (<count> active)'`
     (`${ROOT_TMUX_WINDOW}` comes from `meta.json:root_tmux_window_id`; never target via `<session>:root-<id>` — see §2.1.)
@@ -515,20 +515,20 @@ When a test agent aborts (`.aborted` written by the impl agent), you:
 
 ## 6. Coordination
 
-### 6.1 Agent → Root: status files + background daemon event-watcher
+### 6.1 Agent → Root: status files + foreground event-watcher
 
-Every agent writes status atomically (`.tmp` then `mv`). You wait by running the watcher script with `Bash(run_in_background=true)` — the runtime manages the process lifecycle, your agent idles (zero tokens), and resumes when the watcher exits.
+Every agent writes status atomically (`.tmp` then `mv`). You wait by running the watcher script as a **single foreground `Bash` call** (NOT `run_in_background`) — the watcher's internal `sleep 10` is bash-internal (zero agent tokens), and your agent resumes immediately when the watcher exits with a result. Do not use `run_in_background` for this call: autonomous agents in tmux sessions cannot auto-resume after background-task completion (DeepCode root-cause: agent stays in "awaiting user input" mode and never receives the notification).
 
-**Launch the watcher and wait (single background Bash call):**
+**Launch the watcher and wait (single foreground Bash call):**
 ```bash
 RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
 rm -f "${RESULT_FILE}"
 bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
   <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
 ```
-Issue this as a **`Bash` tool call with parameter `run_in_background: true`** (NOT a plain foreground Bash call). On DeepCode: `Bash(run_in_background=true)`. On Claude Code: same. On OpenCode: use `bash_bg` tool instead. The runtime fork/execs the watcher; your agent goes idle (zero tokens) and auto-resumes when the background task exits. Capture the task's stdout — the first line is the `EVENT=` result.
+Run this as a **plain foreground `Bash` call** — do NOT use `run_in_background`. When the call returns, capture its stdout — the first line is the `EVENT=` result.
 
-The watcher writes atomically to `${RESULT_FILE}` on the first event. If the output is empty (watcher exited without writing), the daemon died — re-issue the background call. After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue.
+The watcher writes atomically to `${RESULT_FILE}` on the first event. If the output is empty (watcher exited without writing), the watcher died — re-issue the foreground call. After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue.
 
 The watcher:
 - Polls `<status-dir>` every 10 seconds.
