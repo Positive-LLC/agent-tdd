@@ -275,7 +275,7 @@ For each wave (Wave 1 onward):
    bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
      <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
    ```
-   Issue this with `run_in_background=true`. The watcher polls `<status-dir>` every 10 s and exits on the first event (terminal / paused / 30-min timeout), writing the `EVENT=` line to `${RESULT_FILE}`. When the background task completes, capture its stdout — the first line is the `EVENT=` result.
+   Issue this as a **`Bash` tool call with parameter `run_in_background: true`** (NOT a plain foreground Bash call). On DeepCode: `Bash(run_in_background=true)`. On Claude Code: same. On OpenCode: use `bash_bg` tool instead. The runtime fork/execs the watcher; your agent goes idle (zero tokens) and auto-resumes when the background task exits. Capture the task's stdout — the first line is the `EVENT=` result.
 
    Three possible outcomes:
 
@@ -526,7 +526,7 @@ rm -f "${RESULT_FILE}"
 bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
   <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
 ```
-Issue this with `run_in_background=true`. When the background task completes, capture its stdout — the first line is the `EVENT=` result.
+Issue this as a **`Bash` tool call with parameter `run_in_background: true`** (NOT a plain foreground Bash call). On DeepCode: `Bash(run_in_background=true)`. On Claude Code: same. On OpenCode: use `bash_bg` tool instead. The runtime fork/execs the watcher; your agent goes idle (zero tokens) and auto-resumes when the background task exits. Capture the task's stdout — the first line is the `EVENT=` result.
 
 The watcher writes atomically to `${RESULT_FILE}` on the first event. If the output is empty (watcher exited without writing), the daemon died — re-issue the background call. After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue.
 
