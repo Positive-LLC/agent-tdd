@@ -320,24 +320,18 @@ Re-read this file at the top of each iteration.
      ```
      `spawn-root.sh` writes the registry entry **before** the side-effect, launches
      the Root through `launch-root.sh`, and pastes the short bootstrap.
-4. **Wait — idle.** Launch the watcher daemon and wait with a foreground polling loop (cross-platform, in-house — no host-CLI-specific features):
+4. **Wait — idle.** Run the watcher as a **single foreground `Bash` call** (NOT `run_in_background`). The watcher's internal `sleep 10` is bash-internal (zero tokens), and you resume immediately when it exits with an `EVENT=` line. Do not use `run_in_background` — this breaks on autonomous/conversation agents alike (the background-task notification never triggers a new turn when the agent is awaiting input).
 
-   **Step 4a — launch the daemon:**
+   **Step 4 — launch the watcher and wait (single foreground Bash call):**
    ```bash
    RESULT_FILE=".atdd/<notes-id>/cohort-<RI#>/watcher-result.txt"
    rm -f "${RESULT_FILE}"
-   nohup bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
-     .atdd/<notes-id>/cohort-<RI#>/cohort.json "${RESULT_FILE}" \
-     > /dev/null 2>&1 &
+   bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
+     .atdd/<notes-id>/cohort-<RI#>/cohort.json "${RESULT_FILE}"
    ```
+   The watcher polls signals every 10 s and exits on the first event, printing the `EVENT=` line to stdout. When the call returns, capture its stdout — the first line is the `EVENT=` result.
 
-   **Step 4b — wait for the result (background Bash call; 5-min budget):**
-   Issue a `Bash` tool call with `run_in_background=true` that polls `"${RESULT_FILE}"`
-   every 10 s and outputs its content when the file appears. When the background task
-   completes, capture its output — the watcher result is the first line the task prints.
-   If the output is empty (file never appeared within the budget), treat as `NOT_READY`.
-
-   If output is `NOT_READY`, re-issue step 4b (daemon is still running). If output starts with `EVENT=`, dispatch per §4 and `rm -f "${RESULT_FILE}"` before re-launching daemon + wait.
+   If output starts with `EVENT=`, dispatch per §4 and `rm -f "${RESULT_FILE}"` before re-launching. If output is empty (watcher died), re-issue step 4.
 5. **Dispatch on the `EVENT=` line** (§4).
 6. **Advance** only when the RootIssue is joined: every SubIssue merged + closed.
    Close `RI` per CORE.md §9 (with the human, in the §6 batch), run
@@ -362,7 +356,7 @@ Re-launch it after consuming each event. Per-invocation hard ceiling: 60 min
 
 | `EVENT=` | meaning | your action |
 |---|---|---|
-| `root-event STATE=<s> SUB_REF=<r> SEQ=<n>` | a Root's signal advanced past `last_consumed_seq` | dispatch on `<s>` (below); then record `last_consumed_seq=<n>` (§4.1) and re-launch daemon + wait |
+| `root-event STATE=<s> SUB_REF=<r> SEQ=<n>` | a Root's signal advanced past `last_consumed_seq` | dispatch on `<s>` (below); then record `last_consumed_seq=<n>` (§4.1) and re-launch foreground watcher |
 | `root-dead SUB_REF=<r>` | window gone, no clean/known terminal | escalate to the human with a recommendation (re-spawn from the SubIssue?) |
 | `cohort-ready` | every member settled (`awaiting-merge-confirm`/`failed`/`crashed`) | run the §6 consolidated merge approval |
 | `timeout ELAPSED_SEC=<n>` | per-invocation ceiling | §4.2 health check → self-extend once or escalate |
