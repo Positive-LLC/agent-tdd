@@ -331,15 +331,11 @@ Re-read this file at the top of each iteration.
      > /dev/null 2>&1 &
    ```
 
-   **Step 4b — wait for the result (single Bash call; 5-min budget):**
-   ```bash
-   RESULT_FILE=".atdd/<notes-id>/cohort-<RI#>/watcher-result.txt"
-   for i in $(seq 1 30); do
-     if [ -s "${RESULT_FILE}" ]; then cat "${RESULT_FILE}"; exit 0; fi
-     sleep 10
-   done
-   echo "NOT_READY"
-   ```
+   **Step 4b — wait for the result (background Bash call; 5-min budget):**
+   Issue a `Bash` tool call with `run_in_background=true` that polls `"${RESULT_FILE}"`
+   every 10 s and outputs its content when the file appears. When the background task
+   completes, capture its output — the watcher result is the first line the task prints.
+   If the output is empty (file never appeared within the budget), treat as `NOT_READY`.
 
    If output is `NOT_READY`, re-issue step 4b (daemon is still running). If output starts with `EVENT=`, dispatch per §4 and `rm -f "${RESULT_FILE}"` before re-launching daemon + wait.
 5. **Dispatch on the `EVENT=` line** (§4).
@@ -400,7 +396,11 @@ To answer a paused Root, **poll for its prompt first** (the Root decided to paus
 its input buffer may not be at a clean prompt yet), then `send-keys`:
 ```bash
 W="$(jq -r --arg s "<sub_ref>" '.members[$s].window_id' "$C")"
-for _ in $(seq 1 30); do tmux capture-pane -p -t "$W" 2>/dev/null | tail -3 | grep -qE '^[> ]' && break; sleep 1; done
+```
+Issue a `Bash` tool call with `run_in_background=true` to poll the Root's pane
+(`tmux capture-pane -p -t "$W" | tail -3`) until a prompt (`^[> ]`) appears; when
+the background task finishes, the prompt is ready, then `send-keys`:
+```bash
 tmux send-keys -t "$W" '<your answer>' Enter
 ```
 **Durability:** also mirror the question + your answer to a comment on the SubIssue
