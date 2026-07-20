@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 # wave-watcher.sh — single-shot background event watcher for a wave.
 #
-# Usage:  wave-watcher.sh <root-id> <wave> <expected-terminal-count>
+# Usage:  wave-watcher.sh <root-id> <wave> <expected-terminal-count> [<result-file>]
 #
 # Behavior:
 #   - Polls .atdd/<root-id>/wave-<N>/status/ every 10 seconds.
-#   - Exits 0 with `EVENT=terminal` to stdout when terminal count >= expected.
-#   - Exits 0 with `EVENT=paused FILE=<path>` to stdout if any .paused appears.
-#   - Exits 0 with `EVENT=timeout` to stdout when WAVE_WATCHER_TIMEOUT_SEC
+#   - Exits 0 with `EVENT=terminal` when terminal count >= expected.
+#   - Exits 0 with `EVENT=paused FILE=<path>` if any .paused appears.
+#   - Exits 0 with `EVENT=timeout` when WAVE_WATCHER_TIMEOUT_SEC
 #     (default 1800 = 30 min) of wall-clock elapses from this invocation's
 #     start without a terminal/paused event. The deadline is set once at
 #     start and is NOT reset by activity in the worktree or pane — so the
 #     semantics are "max wall-clock per invocation," not "max time between
 #     events." Across re-issues each new invocation gets a fresh budget.
-#   - Designed to be invoked once per wave (and once per resumed wait after a
-#     pause) with run_in_background=true.
+#   - With 3 args: writes event lines to stdout (legacy; for Claude Code
+#     run_in_background / OpenCode bash_bg).
+#   - With 4 args: writes event lines ATOMICALLY to <result-file> (writes to
+#     a .tmp sibling then mv's on exit — no partial reads). This is the
+#     cross-platform daemon form: launched via nohup, with the agent polling
+#     the result file from a foreground Bash loop (see PROTOCOL.md §6.1).
 #
 # Root issues this exactly once per wait. When it exits, Root resumes and
 # decides based on the EVENT line. On EVENT=timeout the wave has not reached
@@ -25,10 +29,22 @@
 
 set -uo pipefail
 
-[[ $# -eq 3 ]] || { echo "usage: $0 <root-id> <wave> <expected-terminal-count>" >&2; exit 1; }
+[[ $# -eq 3 || $# -eq 4 ]] || { echo "usage: $0 <root-id> <wave> <expected-terminal-count> [<result-file>]" >&2; exit 1; }
 ROOT_ID="$1"
 WAVE="$2"
 EXPECTED="$3"
+
+# --- atomic result-file mode (4-arg form; cross-platform daemon) ---
+if [[ $# -eq 4 ]]; then
+  RESULT_FILE="$4"
+  TMP_OUT="${RESULT_FILE}.tmp"
+  # Redirect stdout to the temp file; stderr stays on real stderr.
+  exec > "${TMP_OUT}"
+  # On any exit, atomically mv the completed temp file to the result file.
+  # The agent's polling loop checks for existence of RESULT_FILE (not the
+  # .tmp), so partial output is never observed.
+  trap '[[ -f "${TMP_OUT}" ]] && mv "${TMP_OUT}" "${RESULT_FILE}"' EXIT
+fi
 
 # Hard ceiling per watcher invocation. Override via env var only for testing.
 TIMEOUT_SEC="${WAVE_WATCHER_TIMEOUT_SEC:-1800}"

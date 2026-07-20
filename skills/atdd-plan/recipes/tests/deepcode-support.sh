@@ -100,11 +100,11 @@ grep -Fq 'Deep Code sets' \
   && pass "atdd/SKILL.md: bootstrap mentions Deep Code env setup" \
   || fail "atdd/SKILL.md: bootstrap missing Deep Code"
 
-# atdd/SKILL.md: wave-watcher doc mentions Deep Code
-grep -Fq 'Deep Code uses `run_in_background=true`' \
+# atdd/SKILL.md: wave-watcher doc describes cross-platform nohup daemon approach
+grep -Fq 'Event-watcher daemon. Cross-platform' \
   "${SKILLS_DIR}/atdd/SKILL.md" \
-  && pass "atdd/SKILL.md: wave-watcher doc mentions Deep Code" \
-  || fail "atdd/SKILL.md: wave-watcher doc missing Deep Code"
+  && pass "atdd/SKILL.md: wave-watcher doc describes cross-platform nohup daemon" \
+  || fail "atdd/SKILL.md: wave-watcher doc missing cross-platform description"
 
 echo "== deepcode-support: recipe comments mention deepcode =="
 

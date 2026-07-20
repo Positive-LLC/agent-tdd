@@ -3,11 +3,11 @@
 #
 # The Notes-Agent-orchestration analogue of wave-watcher.sh. A cohort is the set
 # of Roots spawned for the ready SubIssues of ONE RootIssue (one-RootIssue-at-a-
-# time). Issued ONCE per wait, via Bash(run_in_background=true), so the
-# orchestrator is idle (zero turns/tokens) until an event — identical economics to
-# wave-watcher.sh. Re-issued after the orchestrator consumes an event.
+# time). Issued ONCE per wait, so the orchestrator is idle (zero turns/tokens)
+# until an event — identical economics to wave-watcher.sh. Re-issued after the
+# orchestrator consumes an event.
 #
-# Usage:  roots-watcher.sh <cohort-json>
+# Usage:  roots-watcher.sh <cohort-json> [<result-file>]
 #
 #   <cohort-json>  absolute path to cohort-<RI#>/cohort.json (written by
 #                  spawn-root.sh). Records each member's absolute signal_path,
@@ -42,8 +42,16 @@
 
 set -uo pipefail
 
-[[ $# -eq 1 ]] || { echo "usage: $0 <cohort-json>" >&2; exit 1; }
+[[ $# -eq 1 || $# -eq 2 ]] || { echo "usage: $0 <cohort-json> [<result-file>]" >&2; exit 1; }
 COHORT_JSON="$1"
+
+# --- atomic result-file mode (2-arg form; cross-platform daemon) ---
+if [[ $# -eq 2 ]]; then
+  RESULT_FILE="$2"
+  TMP_OUT="${RESULT_FILE}.tmp"
+  exec > "${TMP_OUT}"
+  trap '[[ -f "${TMP_OUT}" ]] && mv "${TMP_OUT}" "${RESULT_FILE}"' EXIT
+fi
 [[ -f "${COHORT_JSON}" ]] || { echo "EVENT=error"; echo "REASON=cohort-json-missing:${COHORT_JSON}"; exit 0; }
 
 command -v jq >/dev/null 2>&1 || { echo "EVENT=error"; echo "REASON=jq-missing"; exit 0; }

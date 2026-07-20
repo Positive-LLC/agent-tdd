@@ -83,8 +83,7 @@ Alongside CORE.md's 10 planning invariants. Non-negotiable.
    Interrupt the human only for §5 exceptions. A new planning request mid-orchestration
    is captured as backlog, not handled inline.
 8. **Caps and ceilings are inviolable.** Respect `concurrent_root_cap` (default 3)
-   and the `roots-watcher` ceiling; never busy-wait — always idle on the background
-   watcher.
+   and the `roots-watcher` ceiling; never busy-wait — always idle on the nohup daemon.
 9. **codex host not yet supported.** Refuse (escalate) any SubIssue whose resolved
    `AGENT_TDD_CLI` is `codex`; the human runs those manually. (claude and opencode
    orchestrated launch are verified — see ROADMAP Smoke-Test Risk #5/#8f.)
@@ -151,7 +150,7 @@ gitignored (`.atdd/.gitignore`).
 └── cohort-<RI#>/
     ├── cohort.json                 (the roots-watcher's input + per-Root registry; §2.4)
     ├── started_at                  (cohort wall-clock anchor)
-    ├── extensions/<sub-slug>       (one-time watcher self-extension markers)
+    ├── extensions/<sub-slug>       (one-time daemon self-extension markers)
     └── <sub-slug>/
         ├── root-signal.json        (= the Root's AGENT_TDD_SIGNAL_PATH; §2.5)
         ├── launch.sh               (the per-Root env prefix + supervisor call)
@@ -321,18 +320,28 @@ Re-read this file at the top of each iteration.
      ```
      `spawn-root.sh` writes the registry entry **before** the side-effect, launches
      the Root through `launch-root.sh`, and pastes the short bootstrap.
-4. **Wait — idle.** Issue the watcher once, in the background (zero turns/tokens):
+4. **Wait — idle.** Launch the watcher daemon and wait with a foreground polling loop (cross-platform, in-house — no host-CLI-specific features):
 
-   **Claude Code:** one Bash call with `run_in_background=true`:
+   **Step 4a — launch the daemon:**
    ```bash
-   bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
-     .atdd/<notes-id>/cohort-<RI#>/cohort.json
+   RESULT_FILE=".atdd/<notes-id>/cohort-<RI#>/watcher-result.txt"
+   rm -f "${RESULT_FILE}"
+   nohup bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh \
+     .atdd/<notes-id>/cohort-<RI#>/cohort.json "${RESULT_FILE}" \
+     > /dev/null 2>&1 &
    ```
 
-   **OpenCode:** use the `bash_bg` tool:
+   **Step 4b — wait for the result (single Bash call; 5-min budget):**
+   ```bash
+   RESULT_FILE=".atdd/<notes-id>/cohort-<RI#>/watcher-result.txt"
+   for i in $(seq 1 30); do
+     if [ -s "${RESULT_FILE}" ]; then cat "${RESULT_FILE}"; exit 0; fi
+     sleep 10
+   done
+   echo "NOT_READY"
    ```
-   bash_bg(command="bash ${CLAUDE_SKILL_DIR}/../atdd-plan/recipes/roots-watcher.sh .atdd/<notes-id>/cohort-<RI#>/cohort.json", timeoutSec=3660)
-   ```
+
+   If output is `NOT_READY`, re-issue step 4b (daemon is still running). If output starts with `EVENT=`, dispatch per §4 and `rm -f "${RESULT_FILE}"` before re-launching daemon + wait.
 5. **Dispatch on the `EVENT=` line** (§4).
 6. **Advance** only when the RootIssue is joined: every SubIssue merged + closed.
    Close `RI` per CORE.md §9 (with the human, in the §6 batch), run
@@ -349,14 +358,15 @@ whole RootIssue before advancing** to the next.
 
 ## 4. Watcher coordination + event dispatch
 
-`roots-watcher.sh` is single-shot and idle-cheap (mirrors `wave-watcher.sh`): it
+The daemon (roots-watcher.sh, launched via nohup in §3.2 step 4a) is single-shot: it
 polls each cohort member's `signal_path` + tmux window liveness every 10 s, makes
-**zero gh calls**, emits one `EVENT=` line, and exits. Re-issue it after consuming
-each event. Per-invocation hard ceiling: 60 min (`ROOTS_WATCHER_TIMEOUT_SEC`).
+**zero gh calls**, writes one `EVENT=` line atomically to its result file, and exits.
+Re-launch it after consuming each event. Per-invocation hard ceiling: 60 min
+(`ROOTS_WATCHER_TIMEOUT_SEC`).
 
 | `EVENT=` | meaning | your action |
 |---|---|---|
-| `root-event STATE=<s> SUB_REF=<r> SEQ=<n>` | a Root's signal advanced past `last_consumed_seq` | dispatch on `<s>` (below); then record `last_consumed_seq=<n>` (§4.1) and re-issue |
+| `root-event STATE=<s> SUB_REF=<r> SEQ=<n>` | a Root's signal advanced past `last_consumed_seq` | dispatch on `<s>` (below); then record `last_consumed_seq=<n>` (§4.1) and re-launch daemon + wait |
 | `root-dead SUB_REF=<r>` | window gone, no clean/known terminal | escalate to the human with a recommendation (re-spawn from the SubIssue?) |
 | `cohort-ready` | every member settled (`awaiting-merge-confirm`/`failed`/`crashed`) | run the §6 consolidated merge approval |
 | `timeout ELAPSED_SEC=<n>` | per-invocation ceiling | §4.2 health check → self-extend once or escalate |
@@ -367,7 +377,7 @@ Dispatch on `STATE` of a `root-event`:
   (§5): answer from artifacts if you can (relay §4.1), else escalate.
 - **`awaiting-merge-confirm`** — the Root finished and opened its integration→base PR
   (`pr_url` in the signal). Do **not** approve now: mark the member merge-pending,
-  record `last_consumed_seq`, and re-issue to let siblings finish. The §6 batch gates
+  record `last_consumed_seq`, and re-launch daemon + wait to let siblings finish. The §6 batch gates
   it.
 - **`rebase-blocked`** — rung-3 semantic / rung-4 regression (a human call by
   design). Escalate with the Root's recommendation. You do not touch another repo's
@@ -380,7 +390,7 @@ Dispatch on `STATE` of a `root-event`:
 
 ### 4.1 Recording consumption + relaying an answer
 
-Before re-issuing the watcher, record what you consumed (so it won't re-fire on the
+Before re-launching daemon + wait, record what you consumed (so it won't re-fire on the
 same event):
 ```bash
 C=.atdd/<notes-id>/cohort-<RI#>/cohort.json
@@ -403,8 +413,7 @@ store (the local signal + keystroke are not enough — see WHITEPAPER §10.7).
 For each non-settled member: window alive? (`tmux list-windows -a -F '#{window_id}'`
 contains its `window_id`) and `heartbeat_ts` advancing across two reads? If alive +
 progressing **and** no `cohort-<RI#>/extensions/<sub-slug>` marker exists → `touch`
-the marker (consume the one-time self-extension), log it, and silently re-issue the
-watcher for one more budget. Otherwise escalate (window dead, or heartbeat frozen, or
+the marker (consume the one-time self-extension), log it, and silently re-launch daemon + wait for one more budget. Otherwise escalate (window dead, or heartbeat frozen, or
 self-extension already used). Also enforce the **per-cohort wall-clock ceiling**
 (`meta.json:cohort_wallclock_cap_sec`, default 6 h, measured from
 `cohort-<RI#>/started_at`): once exceeded, stop self-extending and checkpoint the
@@ -421,7 +430,7 @@ The chain: **Root → you (proxy) → real human (only if needed).**
 - A `paused-needs-proxy` question answerable from the RootIssue body, SubIssue body,
   manifest, or `topology-*` output → relay the answer (§4.1).
 - `awaiting-merge-confirm` → hold for the cohort batch.
-- One-time watcher self-extension for a live, progressing Root.
+- One-time daemon self-extension for a live, progressing Root.
 - A single Root `failed`/`crashed` where the cohort can still progress → record;
   batch into the §6 checkpoint.
 
@@ -513,8 +522,8 @@ durable; the conversation is not. If you have lost track (you cannot write the �
    - SubIssues marked `running` in the registry but already closed in the store → mark
      finalized. Ready SubIssues of `current_rootissue` not yet spawned (cap
      permitting) → spawn.
-5. Re-issue `roots-watcher.sh` if any member is non-terminal (the prior background
-   watcher died with the compacted-out session — same reasoning as the Root's Resume
+5. Re-launch `roots-watcher.sh` daemon + wait if any member is non-terminal (the prior background
+   daemon died with the compacted-out session — same reasoning as the Root's Resume
    bootstrap step 7).
 
 `orch.log` is the append-only breadcrumb — every spawn, auto-answer, escalation, and
@@ -549,11 +558,11 @@ ask once → `orch-init.sh` on "go" (else plan-only fallback).
 
 **Per RootIssue:** re-read this file → pick `current_rootissue` (one at a time) →
 ready SubIssues → for each up to cap: host-gate, resolve clone, pre-spawn validate,
-`spawn-root.sh` → issue `roots-watcher.sh` (background) → idle.
+`spawn-root.sh` → launch daemon + wait (see §3.2 step 4).
 
 **On `root-event`:** dispatch on STATE → answer-from-artifacts or escalate
 (paused), hold (awaiting-merge), escalate (rebase-blocked/stuck/failed/crashed) →
-record `last_consumed_seq` → mirror Q/A to SubIssue comment → re-issue watcher.
+record `last_consumed_seq` → mirror Q/A to SubIssue comment → re-launch daemon + wait.
 
 **On `root-dead`:** escalate with a recommendation.
 
