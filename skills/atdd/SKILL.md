@@ -59,6 +59,19 @@ In order, before responding to the human:
 
    **Then ensure the `atdd` CLI** (host-agnostic, before any recipe or protocol step). With `CLAUDE_SKILL_DIR` now set, run `bash ${CLAUDE_SKILL_DIR}/../ensure-atdd.sh` (see `${CLAUDE_SKILL_DIR}/../INIT_SETUP.md`). It installs/updates the local `atdd` binary every recipe depends on — downloading the matching build from the public agent-tdd Release if missing. Do **not** proceed until it succeeds and `atdd ping` works.
 
+   **DeepCode host — critical waiting rules (read if AGENT_TDD_CLI=deepcode).**
+   DeepCode has a background-shell auto-resume mechanism that wakes the session
+   when a background process exits. Follow these rules for every watcher call:
+   - **Always** use `run_in_background: true` with the **3-arg form** of the
+     watcher script (do NOT pass a 4th result-file argument).
+   - After launching the watcher, output a brief status message with **zero tool
+     calls**. The session will go idle (zero tokens) and auto-resume when the
+     watcher exits. The completion notification includes the watcher output
+     (`EVENT=` lines) inline — no `read` call is needed.
+   - **Never** use foreground Bash for watchers or any command that may exceed
+     the default 10-minute timeout. Do **not** poll with `tmux capture-pane`
+     to check on child agents — the watcher handles this with zero tokens.
+
    **Then run the mandatory LSP gate.** Run `bash ${CLAUDE_SKILL_DIR}/../stack-preflight.sh` and read the JSON it prints (`repo`, `repo_registered`, `detected` / `covered` / `missing`). It detects the repo's symbol-precise languages, cross-checks the `atdd` stack registry, and — unlike a plain advisory — **exits non-zero (BLOCKED) while any symbol-precise language has no working LSP.** LSP is **mandatory** for those (atdd `#32`): `atdd stack verify` reports a `#symbol` anchor as `blocked` (never a silent "verified") without one, so you must provision before any Stack work. **Treat `detected` as a floor, not the final word (hybrid):** the recipe checks a fixed set (rust, python, typescript, javascript, go) by file pattern — add any *other* symbol-precise language you can see the repo really uses (e.g. java, ruby, c/c++) to the set you act on, and quietly skip an entry that is plainly a stray tool/config file rather than real code. Then, for each language in the refined `missing` set, tell the human in one line which languages lack an LSP and offer to provision each: detect the right server, ask the human which to install, install it, then register it. Use the JSON's `repo` field as `<owner/repo>` — it is **always set** (it falls back to the folder name), so you never ask the human for the repo name; and if the JSON's `repo_registered` is `false`, first run `atdd repo register <owner/repo> <abs-repo-path>` to add the repo to the active project, then `atdd lsp register --repo <owner/repo> --lang <lang> --bin <path>`. **Re-run `stack-preflight.sh` until it exits 0** — LSP is mandatory, so do not proceed past a BLOCK on a symbol-precise language (shell / markdown / config have no symbol LSP and are never gated, so a docs/shell repo passes immediately). Then load the single-source **Stack guide** for the architecture-model verbs: `Read(${CLAUDE_SKILL_DIR}/../STACK_USAGE.md)` — it is where `layer / interface / process / pipeline` + `stack verify / roots / zoom` are documented (one file, read by every agent; never paste its content elsewhere). **atdd-cli is ALPHA** — if a Stack verb confuses you, errors, or you wish it did something, drop a one-liner (don't derail the wave): `bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/report-feedback.sh --role root --summary "<gist>"` (pipe richer detail via stdin); see the 🚧 box in `STACK_USAGE.md`.
 
 1. **Read the protocol:** `Read(${CLAUDE_SKILL_DIR}/../atdd/PROTOCOL.md)`. This loads the canonical operational spec into your context.

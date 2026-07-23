@@ -268,22 +268,45 @@ For each wave (Wave 1 onward):
 
    The watcher runs as a **foreground blocking call** that internally polls status files. You issue ONE `Bash` call (NOT `run_in_background`) — the watcher's internal `sleep 10` is bash-internal (zero agent tokens), and your agent resumes immediately when the watcher exits with a result. This pattern works identically on every host CLI without relying on background-task notification (which breaks for autonomous agents in tmux sessions — see DeepCode root-cause analysis in #95).
 
-   **Step 9 — launch the watcher and wait (single foreground Bash call):**
+   **Step 9 — launch the watcher and wait:**
+
+   **Host-specific instructions — read the one for YOUR host:**
+
+   **DeepCode:** Use `run_in_background: true` with the **3-arg form**. The watcher
+   writes `EVENT=` lines to stdout, which is captured to the background output log.
+   After launching, output a brief status message with **zero tool calls** — the
+   session will go idle (zero tokens consumed) and auto-resume when the watcher
+   process exits. The completion message includes the watcher output, so you will
+   see the `EVENT=` result immediately on resume.
+
+   ```bash
+   # DeepCode: 3-arg form, run_in_background: true
+   bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
+     <root-id> <wave> <expected_terminal_count>
+   ```
+
+   **All other hosts (Claude Code, OpenCode, Codex):** Use the **4-arg daemon form**
+   as a foreground Bash call — do NOT use `run_in_background`. Foreground Bash
+   blocks the turn (zero tokens) and returns when the watcher exits.
+
    ```bash
    RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
    rm -f "${RESULT_FILE}"
    bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
      <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
    ```
-   Run this as a **plain foreground `Bash` call** — do NOT use `run_in_background`. The watcher polls `<status-dir>` every 10 s (bash-internal, zero agent tokens) and exits on the first event (terminal / paused / 30-min timeout), printing the `EVENT=` line to stdout. When the call returns, capture its stdout — the first line is the `EVENT=` result.
 
-   Three possible outcomes:
+   The watcher polls `<status-dir>` every 10 s (bash-internal, zero agent tokens)
+   and exits on the first event (terminal / paused / 30-min timeout), printing the
+   `EVENT=` line to stdout.
 
-   - Output starts with `EVENT=` → the watcher produced an event. Dispatch per §6.1 and delete `${RESULT_FILE}` before re-issuing.
-   - Output is empty (watcher exited without writing) → the watcher died or the file was never created. Re-issue step 9.
-   - The watcher produces `EVENT=timeout` after its own 30-min ceiling. Process per §6.1 as usual.
+   When the watcher exits, capture the `EVENT=` result:
 
-   After consuming any event (or after a human answers a pause), `rm -f "${RESULT_FILE}"` and **re-issue step 9** with a fresh foreground call.
+   - Output starts with `EVENT=` → the watcher produced an event. Dispatch per §6.1.
+   - Output is empty (watcher died without writing) → re-issue step 9.
+   - `EVENT=timeout` after its own 30-min ceiling → process per §6.1.
+
+   After consuming any event (or after a human answers a pause), **re-issue step 9**.
 10. **Update your dashboard window name** so the human sees state at a glance:
     `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> (<count> active)'`
     (`${ROOT_TMUX_WINDOW}` comes from `meta.json:root_tmux_window_id`; never target via `<session>:root-<id>` — see §2.1.)
@@ -515,20 +538,37 @@ When a test agent aborts (`.aborted` written by the impl agent), you:
 
 ## 6. Coordination
 
-### 6.1 Agent → Root: status files + foreground event-watcher
+### 6.1 Agent → Root: status files + background event-watcher
 
-Every agent writes status atomically (`.tmp` then `mv`). You wait by running the watcher script as a **single foreground `Bash` call** (NOT `run_in_background`) — the watcher's internal `sleep 10` is bash-internal (zero agent tokens), and your agent resumes immediately when the watcher exits with a result. Do not use `run_in_background` for this call: autonomous agents in tmux sessions cannot auto-resume after background-task completion (DeepCode root-cause: agent stays in "awaiting user input" mode and never receives the notification).
+Every agent writes status atomically (`.tmp` then `mv`). You wait by running the watcher script.
 
-**Launch the watcher and wait (single foreground Bash call):**
+**Host-specific instructions — read the one for YOUR host:**
+
+**DeepCode:** Use `run_in_background: true` with the **3-arg form**. The watcher
+writes `EVENT=` lines to stdout (captured to the background output log). After
+launching, output a brief status message with **zero tool calls** — the session
+goes idle (zero tokens) and auto-resumes when the watcher exits. The completion
+notification includes the watcher output, so you see `EVENT=` immediately.
+
+```bash
+# DeepCode: 3-arg form, run_in_background: true
+bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
+  <root-id> <wave> <expected_terminal_count>
+```
+
+**All other hosts (Claude Code, OpenCode, Codex):** Use the **4-arg daemon form**
+as a foreground Bash call. Foreground Bash blocks the turn (zero tokens) and
+returns when the watcher exits. Do NOT use `run_in_background`.
+
 ```bash
 RESULT_FILE=".atdd/<root-id>/wave-<N>/watcher-result.txt"
 rm -f "${RESULT_FILE}"
 bash ${CLAUDE_SKILL_DIR}/../atdd/recipes/wave-watcher.sh \
   <root-id> <wave> <expected_terminal_count> "${RESULT_FILE}"
 ```
-Run this as a **plain foreground `Bash` call** — do NOT use `run_in_background`. When the call returns, capture its stdout — the first line is the `EVENT=` result.
 
-The watcher writes atomically to `${RESULT_FILE}` on the first event. If the output is empty (watcher exited without writing), the watcher died — re-issue the foreground call. After consuming any event, `rm -f "${RESULT_FILE}"` and re-issue.
+When the watcher returns (or auto-resume delivers its output), capture the
+`EVENT=` result. If the output is empty (watcher died without writing), re-issue.
 
 The watcher:
 - Polls `<status-dir>` every 10 seconds.
@@ -536,13 +576,13 @@ The watcher:
 - Exits with `EVENT=paused FILE=<path>` if any `.paused` file appears.
 - Exits with `EVENT=timeout` if 30 minutes of wall-clock elapse from this invocation's start without a terminal or paused event (the per-invocation hard ceiling). Also emits `TERMINAL_COUNT=<n>` and `EXPECTED=<n>` so you can describe the stuck state.
 
-The 30-min ceiling is **wall-clock per watcher invocation**, set once at start and not reset by activity. Across re-issues (e.g. after answering a paused agent) each new daemon gets a fresh 30-min budget — so a normal wave with one mid-wave pause is unaffected. But a long sequential phase inside a single invocation (heavy first-time compile, slow integration boot, test agent running serially before the impl agent it spawns) can hit the ceiling even while child agents are making forward progress. The `EVENT=timeout` block below explains how to distinguish "really stuck" from "really slow."
+The 30-min ceiling is **wall-clock per watcher invocation**, set once at start and not reset by activity. Across re-issues (e.g. after answering a paused agent) each new invocation gets a fresh 30-min budget — so a normal wave with one mid-wave pause is unaffected. But a long sequential phase inside a single invocation (heavy first-time compile, slow integration boot, test agent running serially before the impl agent it spawns) can hit the ceiling even while child agents are making forward progress. The `EVENT=timeout` block below explains how to distinguish "really stuck" from "really slow."
 
 When you resume:
 - `EVENT=terminal` → §3.5 housekeeping.
 - `EVENT=paused` → read the paused file. **First check for a coexisting `.crashed` for the same issue: crash wins.** If `.crashed` exists (or the agent's window is gone), the session is dead — `rm` the stale `.paused`, treat the issue as terminal, do **not** answer. (The supervisor normally removes the stale `.paused` itself; this rule is the belt-and-suspenders for reading the dir mid-cleanup.) Otherwise, read the `question` and decide:
-  - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window — `ws-root-<id>:issue-<N>` when `from` is `test-agent`, `ws-root-<id>:issue-<N>-PR` when `from` is `impl-agent` — then `rm` the `.paused` file and **re-issue the daemon + wait** to resume waiting.
-  - Not answerable → rename your dashboard window via the stable window ID (`meta.json:root_tmux_window_id`; e.g. `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/../atdd/recipes/notify-human.sh "issue #<X> paused" <root-id>`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the daemon + wait.
+  - Answerable from context (the issue body, the worktree, recent commits) → `tmux send-keys` the answer to the agent's window — `ws-root-<id>:issue-<N>` when `from` is `test-agent`, `ws-root-<id>:issue-<N>-PR` when `from` is `impl-agent` — then `rm` the `.paused` file and **re-issue the watcher + wait** to resume waiting.
+  - Not answerable → rename your dashboard window via the stable window ID (`meta.json:root_tmux_window_id`; e.g. `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⏸ paused (#<X>) — human input needed'`), call `${CLAUDE_SKILL_DIR}/../atdd/recipes/notify-human.sh "issue #<X> paused" <root-id>`, and wait for the human's input. Relay the answer to the agent, `rm` the `.paused`, re-issue the watcher + wait.
 - `EVENT=timeout` → the wave did not reach Gate 1 within this watcher's 30-min budget. This may mean a child died silently *or* a child is doing legitimate slow work (heavy first-time compile, slow integration boot, sequential test→impl phases). You must inspect to tell which. **Do not blindly re-issue, and do not blindly escalate.** Run the health checklist below per non-terminal issue and decide.
 
   **Health checklist (per non-terminal issue X):**
@@ -555,16 +595,25 @@ When you resume:
       - **Worker is doing work (CPU advancing):** sample `awk '{print $14+$15}' /proc/<worker-pid>/stat` twice, 30 seconds apart. The delta must exceed **100 clock ticks** (≈ 1 CPU-second over the 30s window). A worker with zero CPU growth over 30 seconds is deadlocked even though its PID is alive — escalate. (Note: this is the universal "is it actually working" signal because a CLI mid-compile or mid-test-run advances CPU without necessarily printing anything to the pane; it applies equally to the interactive test and impl agents.)
      - **No failure marker:** none of `<status-dir>/issue-${X}.{failed,aborted,crashed}` already exists (defensive — these would normally have been counted as terminal).
   5. **Verdict per issue:**
-     - **All four signals green AND `<state-dir>/wave-<N>/extensions/issue-${X}` does not exist** → "really slow, not really stuck." `mkdir -p <state-dir>/wave-<N>/extensions && touch <state-dir>/wave-<N>/extensions/issue-${X}` to consume the one-time self-extension, append a one-line note to `<state-dir>/decisions.log` (e.g. `wave-<N> issue-${X}: self-extended at <ts>; CPU delta=<N> ticks/30s`), and **silently re-issue the daemon + wait** for one more 30-min budget — no human input needed. One self-extension per issue per wave caps Root at 60 min wall-clock per issue before mandatory human escalation.
+     - **All four signals green AND `<state-dir>/wave-<N>/extensions/issue-${X}` does not exist** → "really slow, not really stuck." `mkdir -p <state-dir>/wave-<N>/extensions && touch <state-dir>/wave-<N>/extensions/issue-${X}` to consume the one-time self-extension, append a one-line note to `<state-dir>/decisions.log` (e.g. `wave-<N> issue-${X}: self-extended at <ts>; CPU delta=<N> ticks/30s`), and **silently re-issue the watcher + wait** for one more 30-min budget — no human input needed. One self-extension per issue per wave caps Root at 60 min wall-clock per issue before mandatory human escalation.
      - **Any signal red OR `extensions/issue-${X}` already exists** → escalate (steps 6–8).
 
   **Escalation (when verdict is "escalate"):**
   6. Inspect each escalating issue's log bundle (`<state-dir>/wave-<N>/logs/issue-${X}/{tmux.pane,agent.exitcode,agent.timing.*}` — both agent kinds are pane-captured; only impl has the supervisor's exitcode/timing files) and tmux window (`tmux capture-pane -p -t ws-root-<id>:issue-${X}*`) to form your recommendation. Most common diagnoses: silently dead agent CLI with no `.crashed` written (worker PID gone, wrapper still waiting); an interactive agent (test or impl) that never wrote `.paused` (worker alive, CPU near zero, prompt visible in pane); an agent blocked on an in-pane permission/approval prompt (worker alive, CPU near zero, a `[y/N]`-style prompt visible in capture-pane); self-extension exhausted while agent is busy-looping (CPU advancing but 60+ min and still no terminal status).
   7. Rename your dashboard window via window ID: `tmux rename-window -t "${ROOT_TMUX_WINDOW}" 'root-<id>: wave-<N> ⚠ stuck (<count> of <expected> after <total>m) — human input needed'` (where `<total>` is 30 or 60 depending on whether self-extension was used) and call `${CLAUDE_SKILL_DIR}/../atdd/recipes/notify-human.sh "wave <N> stuck (<count> of <expected> after <total>m)" <root-id> urgent`.
   8. Surface to the human with a diagnostic table (per escalating issue: which of the four signals were red, log bundle pointers, one-line tmux pane summary) and a single recommendation per §1.5 P6. **Do not present a menu.** Default recommendations: (a) for a confirmed-dead worker PID, "mark it `.failed` manually (`touch <status-dir>/issue-${X}.failed`) and I'll resume — confirm/correct"; (b) for "self-extension exhausted, worker still alive but not terminal after 60 min," "the agent has had its full budget and is still not terminal — I recommend marking it `.failed` and inspecting the log bundle for re-spawn — confirm/correct."
-  9. After the human responds, take the agreed action and re-issue the daemon + wait.
+  9. After the human responds, take the agreed action and re-issue the watcher + wait.
 
-**Why this design (token cost):** The daemon runs independently via `nohup` and writes its result atomically to a file. The agent waits with a single foreground Bash that sleeps internally — the `sleep`/check loop costs zero tokens (it runs inside the Bash process, not across agent turns). Each wait call covers a 5-min budget; if it exits with `NOT_READY`, the agent re-issues the wait (one tool call per 5 min, ~6 per 30-min wave, vs ~90 with naive per-check polling). This works identically on every host CLI — no `run_in_background`, `bash_bg`, or any other platform-specific feature is needed. The daemon's own 30-min ceiling is the safety net for silent agent death; without it, Root waits forever on a dead wave.
+**Why this design (token cost):** The watcher runs as a detached background process
+(on DeepCode via `run_in_background: true`; on other hosts as a foreground bash
+that blocks the turn). The `sleep`/check loop costs zero agent tokens (it runs
+inside the Bash process, not across agent turns). Each invocation stays out
+for up to the watcher's 30-min ceiling — one zero-token gap per wave wait, vs
+~180 polling turns with a naive per-check approach. On DeepCode specifically,
+the auto-resume mechanism re-enters the agent loop when the watcher exits,
+delivering the `EVENT=` result inline so no extra read is needed. The watcher's
+own 30-min ceiling is the safety net for silent agent death; without it, Root
+waits forever on a dead wave.
 
 ### 6.2 Root → Agent: `tmux send-keys`
 
