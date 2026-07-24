@@ -87,7 +87,7 @@ show-version:
 # bootstrap stays a no-op and the swap survives every entry-skill run. If you bump
 # one, bump the other (make set-version) or ensure-atdd.sh will overwrite the swap.
 #
-#   make use-dev-atdd       # symlink installed atdd -> dev build (backs up the real one)
+#   make use-dev-atdd       # symlink installed atdd -> dev build + restart daemon
 #   make use-release-atdd   # restore the real release binary (or re-download it)
 #   make build-dev-atdd     # cargo build --release in the sibling atdd-cli
 #   make atdd-status        # show which atdd is active + versions
@@ -126,7 +126,15 @@ use-dev-atdd:
 	echo "swapped: $$installed -> $$dev"
 	echo "  version : $$("$$installed" --version 2>&1)"
 	echo "  lsp verb: $$("$$installed" lsp --help >/dev/null 2>&1 && echo present || echo MISSING)"
-	echo "Dev rebuilds are now live automatically (symlink). Restore with: make use-release-atdd"
+	if "$$installed" daemon status >/dev/null 2>&1; then
+	  echo -n "stopping existing daemon... "
+	  "$$installed" daemon stop
+	  echo "done"
+	fi
+	echo -n "starting fresh daemon... "
+	"$$installed" daemon start-detach
+	echo "done"
+	echo "Dev rebuilds are now live automatically (symlink + fresh daemon). Restore with: make use-release-atdd"
 
 use-release-atdd:
 	@installed="$$(command -v atdd || true)"
