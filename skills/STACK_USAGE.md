@@ -1,4 +1,4 @@
-<!-- STACK-USAGE-SYNC: v5  (shared drift marker — bump in BOTH files when either's
+<!-- STACK-USAGE-SYNC: v6  (shared drift marker — bump in BOTH files when either's
      SUBSTANCE changes; tests/stack-usage-sync.sh fails until they match. The two docs
      are NOT byte-identical by design, so this marker — not a diff — is the sync gate.) -->
 
@@ -257,12 +257,21 @@ pipeline    add --id <id> --name <n> --from-anchor <id> --to-anchor <id>
 
 stack       roots             # top-level Layers as stubs
             zoom <id>         # zoom layer/interface/process/pipeline
-            back              # ascend one level
-            current           # print breadcrumb
+            back              # ascend one level (not yet wired)
+            current           # print breadcrumb (not yet wired)
             verify            # resolve Anchors via LSP
               [--layer <id>] [--worktree <path>]
             drift             # read persisted drift state
               [--worktree <path>]
+            bootstrap --size 2|3 --name <id> --top-name <n> --bottom-name <n>
+              --top-mid-name <n> [--middle-name <n>] [--mid-bot-name <n>]
+            expand --size 2|3 --name <id> --top-name <n> --bottom-name <n>
+              --top-mid-name <n> [--entity-layer <id>|--entity-interface <id>]
+            collapse [--entity-layer <id>|--entity-interface <id>]
+            anchor-add --repo <r> --path <p> [--symbol <s>]
+              [--entity-layer <id>|--entity-interface <id>]
+            anchor-edit <id> [--path <p>] [--symbol <s>]
+            anchor-rm <id>
 
 lsp         register --repo <r> --lang <lang> --bin <path> [--version <v>]
             list [--repo <r>]
